@@ -1,19 +1,24 @@
 [project]
-name = "project-name"
+name = "asago-guardrails-recommender"
 version = "0.1.0"
-description = "TODO: project description"
-requires-python = ">=3.11"
-dependencies = []
+description = "Attack-specific NeMo Guardrails recommendations, tested against the attacks that produced them"
+readme = "README.md"
+license = "Apache-2.0"
+requires-python = ">=3.11,<3.14"
+dependencies = [
+    "pyyaml>=6.0",
+    "requests>=2.31",
+]
 
 [project.scripts]
-# project-name = "project_name.cli:app"
+asago-guardrails-recommender = "asago_guardrails_recommender.cli:main"
 
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/project_name"]
+packages = ["src/asago_guardrails_recommender"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
@@ -30,11 +35,11 @@ python_version = "3.11"
 warn_return_any = true
 warn_unused_configs = true
 check_untyped_defs = true
-plugins = ["pydantic.mypy"]
 
 [tool.ruff]
 target-version = "py311"
 line-length = 120
+extend-exclude = ["output"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I"]

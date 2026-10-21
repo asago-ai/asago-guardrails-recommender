@@ -1,0 +1,11 @@
+passthrough: true
+rails:
+  config:
+    sensitive_data_detection:
+      input:
+        entities:
+        - AU_TFN
+      recognizers: []
+  input:
+    flows:
+    - block_sensitive_data_on_input

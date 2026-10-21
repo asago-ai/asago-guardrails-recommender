@@ -1,0 +1,11 @@
+passthrough: true
+rails:
+  config:
+    sensitive_data_detection:
+      input:
+        entities:
+        - IN_AADHAAR
+      recognizers: []
+  input:
+    flows:
+    - block_sensitive_data_on_input

@@ -1,0 +1,14 @@
+passthrough: true
+rails:
+  config:
+    hf_classifier:
+      prompt-injection:
+        blocked_labels:
+        - INJECTION
+        engine: local
+        model: RedHatAI/deberta-v3-base-prompt-injection-v2
+        task: text-classification
+        threshold: 0.5
+  input:
+    flows:
+    - hf_classifier check windowed input $classifer=prompt-injection

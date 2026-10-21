@@ -70,3 +70,10 @@ dmypy.json
 
 # Prevent default staging of user-local Claude settings
 .claude/settings.json
+
+# asago-guardrails-recommender
+output/
+.tag_cache/
+config.yaml
+*.log
+_request_*.json

@@ -1,0 +1,12 @@
+
+    define flow hf classifier check windowed input
+      $result = execute hf_classifier_check_input_windowed(classifier=$classifier)
+      if $result.is_blocked
+        bot refuse to respond
+        stop
+
+    define flow hf classifier check windowed output
+      $result = execute hf_classifier_check_output_windowed(classifier=$classifier)
+      if $result.is_blocked
+        bot refuse to respond
+        stop
