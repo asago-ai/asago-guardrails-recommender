@@ -251,7 +251,7 @@ def load_scenarios(uc_id: str, pipeline_results: Path) -> Dict[str, Dict]:
     if not scenarios_dir or not scenarios_dir.exists():
         return scenarios
 
-    for scenario_file in scenarios_dir.glob("**/scenario:v2:*.yaml"):
+    for scenario_file in sorted(scenarios_dir.glob("**/scenario:v2:*.yaml")):
         try:
             with open(scenario_file) as f:
                 data = yaml.safe_load(f)

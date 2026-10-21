@@ -36,7 +36,7 @@ def load_attacks(
     for artifact_dir in ARTIFACT_DIRS:
         garak_files.extend(pipeline_results.glob(f"*/{artifact_dir}/**/*-garak.json"))
 
-    for garak_file in garak_files:
+    for garak_file in sorted(garak_files):
         try:
             with open(garak_file) as f:
                 garak = json.load(f)
@@ -154,12 +154,12 @@ def _build_scenario_index(pipeline_results: Path) -> dict[str, dict[str, Any]]:
     for scenario_dir_name in SCENARIO_DIRS:
         scenario_dirs.extend(pipeline_results.glob(f"*/{scenario_dir_name}/*/scenarios"))
 
-    for scenario_dir in scenario_dirs:
+    for scenario_dir in sorted(scenario_dirs):
         if not scenario_dir.exists():
             continue
 
         # Parse all YAML files in the directory
-        for scenario_file in scenario_dir.glob("scenario:v2:*.yaml"):
+        for scenario_file in sorted(scenario_dir.glob("scenario:v2:*.yaml")):
             try:
                 with open(scenario_file) as f:
                     scenario = yaml.safe_load(f) or {}
