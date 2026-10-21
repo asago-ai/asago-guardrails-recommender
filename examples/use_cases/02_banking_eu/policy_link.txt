@@ -1,0 +1,3 @@
+../../asago-policy-mapper/policy_examples/fs-isac.pdf
+
+This policy covers financial services information sharing and cybersecurity, applicable to EU banking compliance.

@@ -1,0 +1,17 @@
+passthrough: true
+rails:
+  config:
+    sensitive_data_detection:
+      input:
+        entities:
+        - EMAIL
+      recognizers:
+      - name: Email Regex
+        patterns:
+        - name: email_regex
+          regex: ((?!\.)(?!.*\.\.)([a-zA-Z0-9_'+\-\.]*)[a-zA-Z0-9_+\-]@([a-zA-Z0-9][a-zA-Z0-9\-]*\.)+[a-zA-Z]{2,})
+          score: 1
+        supported_entity: EMAIL
+  input:
+    flows:
+    - block_sensitive_data_on_input

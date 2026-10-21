@@ -1,0 +1,54 @@
+# ASAGO Pipeline Automation Configuration Example
+#
+# Copy to scripts/config.yaml (gitignored) and edit.
+#
+# Required environment variables:
+#   LITELLM_ENDPOINT - OpenAI-compatible LLM endpoint (e.g., https://<your-endpoint>/v1)
+#   LITELLM_API_KEY - API key for that endpoint
+#   ASAGO_EXAMPLES_DIR - Checkout of https://github.com/asago-ai/asago-examples
+#   AI_ATLAS_NEXUS_DIR - (optional) Checkout of https://github.com/IBM/ai-atlas-nexus
+#                        Only needed when policy_mapper stage runs (not when risk_extraction is provided)
+#
+# For each use case, either:
+#   - risk_extraction: path to a precomputed risk-extraction JSON (skip policy mapper)
+#   - policy_doc: path to a policy document to run the policy mapper on
+#
+# Paths are relative to the repo root; $ASAGO_EXAMPLES_DIR is expanded in policy_doc and risk_extraction.
+
+# LLM Configuration
+llm:
+  model: "<your-model>"
+
+# Use Cases to Process
+use_cases:
+  - id: "01_healthcare_us"
+    name: "HealthHub Patient Portal"
+    # Precomputed policy-mapper result; replace with policy_doc: to run the policy mapper on your own policy
+    risk_extraction: "$ASAGO_EXAMPLES_DIR/asago-scenario-generator/inputs/risk-extractions/risk-extraction-guy-nhs.json"
+    use_case_file: "examples/use_cases/01_healthcare_us/use_case.txt"
+    description: "US Healthcare patient portal with HIPAA compliance"
+
+  - id: "02_banking_eu"
+    name: "EuroBank Customer Service"
+    # Precomputed policy-mapper result; replace with policy_doc: to run the policy mapper on your own policy
+    risk_extraction: "$ASAGO_EXAMPLES_DIR/asago-scenario-generator/inputs/risk-extractions/risk-extraction-fs-isac.json"
+    use_case_file: "examples/use_cases/02_banking_eu/use_case.txt"
+    description: "EU banking with GDPR and PSD2 compliance"
+
+  # Example with policy_doc: runs the policy mapper (requires AI_ATLAS_NEXUS_DIR)
+  # - id: "03_example_policy"
+  #   name: "Example with Live Policy Mapper"
+  #   policy_doc: "$ASAGO_EXAMPLES_DIR/asago-policy-mapper/policy_examples/guy-nhs.pdf"
+  #   use_case_file: "examples/use_cases/01_healthcare_us/use_case.txt"
+  #   description: "Example showing how to run the policy mapper on a policy document"
+
+# Pipeline Stages
+stages:
+  policy_mapper:
+    enabled: true
+
+  scenario_generator:
+    enabled: true
+
+  artifact_generator:
+    enabled: true

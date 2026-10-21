@@ -1,0 +1,72 @@
+passthrough: true
+rails:
+  config:
+    sensitive_data_detection:
+      input:
+        entities:
+        - TITLE
+      recognizers:
+      - deny_list:
+        - Amb
+        - Prof
+        - Honourable
+        - Mx
+        - Capt
+        - Miss
+        - Gov
+        - Eng
+        - Minister
+        - Professor
+        - Councillor
+        - Premier
+        - Master
+        - President
+        - Captain
+        - Adv
+        - Madame
+        - Notary
+        - Senator
+        - Director
+        - Mayor
+        - Pres
+        - Mag
+        - Principal
+        - Delegate
+        - Ambassador
+        - Governor
+        - Prefect
+        - Mrs
+        - Sec
+        - Officer
+        - Cllr
+        - Hon
+        - Sen
+        - Advocate
+        - Mr
+        - Engineer
+        - Min
+        - Doctor
+        - Dean
+        - Dr
+        - Mister
+        - Solicitor
+        - Judge
+        - Secretary
+        - Solicit
+        - Assistant
+        - Magistrate
+        - Ass
+        - Manager
+        - Ofc
+        - Pref
+        - Del
+        - Attorney
+        - Mstr
+        - Att
+        - Mayoress
+        name: Title Recognizer
+        supported_entity: TITLE
+        supported_language: en
+  input:
+    flows:
+    - block_sensitive_data_on_input

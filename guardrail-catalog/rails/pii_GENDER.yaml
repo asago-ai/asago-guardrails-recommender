@@ -1,0 +1,24 @@
+passthrough: true
+rails:
+  config:
+    sensitive_data_detection:
+      input:
+        entities:
+        - GENDER
+      recognizers:
+      - deny_list:
+        - Male
+        - Agender
+        - Genderqueer
+        - Androgynous
+        - Bigender
+        - Genderfluid
+        - Female
+        - Non-binary
+        - Transgender
+        name: Gender
+        supported_entity: GENDER
+        supported_language: en
+  input:
+    flows:
+    - block_sensitive_data_on_input

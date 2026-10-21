@@ -1,0 +1,11 @@
+passthrough: true
+rails:
+  config:
+    sensitive_data_detection:
+      input:
+        entities:
+        - IT_VAT_CODE
+      recognizers: []
+  input:
+    flows:
+    - block_sensitive_data_on_input

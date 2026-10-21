@@ -1,0 +1,9 @@
+passthrough: true
+rails:
+  config:
+    injection_detection:
+      injections:
+      - sqli
+  input:
+    flows:
+    - injection detection

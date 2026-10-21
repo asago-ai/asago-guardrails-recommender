@@ -1,0 +1,132 @@
+passthrough: true
+rails:
+  input:
+    flows: [ ]
+  config:
+    hf_classifier:
+      guardian-hap:
+        engine: local
+        model: "RedHatAI/granite-guardian-hap-125m"
+        task: text-classification
+        threshold: 0.5
+        blocked_labels:
+          - "LABEL_1"
+      prompt-injection:
+        engine: local
+        model: "RedHatAI/deberta-v3-base-prompt-injection-v2"
+        task: text-classification
+        threshold: 0.5
+        blocked_labels:
+          - "INJECTION"
+    injection_detection:
+      injections: []
+    sensitive_data_detection:
+      recognizers:
+        - name: "Email Regex"
+          supported_entity: "EMAIL"
+          patterns:
+            - name: "email_regex"
+              regex: "((?!\\.)(?!.*\\.\\.)([a-zA-Z0-9_'+\\-\\.]*)[a-zA-Z0-9_+\\-]@([a-zA-Z0-9][a-zA-Z0-9\\-]*\\.)+[a-zA-Z]{2,})"
+              score: 1
+        - name: "Canadian Passport"
+          supported_entity: "CA_PASSPORT"
+          patterns:
+            - name: "canada_passport_regex"
+              regex: "(\\b[A-Z]{2}[0-9]{6}\\b)"
+              score: 1
+        - name: "Age Recognizer"
+          supported_entity: "AGE"
+          supported_language: "en"
+          patterns:
+            - name: "age_keyword"
+              regex: "\\bage[sd]?\\s*:?\\s*(\\d{1,3})\\b"
+              score: 1
+            - name: "year_old"
+              regex: "\\b(\\d{1,3})[- ]year[s]?[- ]old\\b"
+              score: 1
+            - name: "years_of_age"
+              regex: "\\b(\\d{1,3})\\s+years?\\s+of\\s+age\\b"
+              score: 1
+            - name: "born_in_year"
+              regex: "\\bborn\\s+in\\s+(\\d{4})\\b"
+              score: 1
+            - name: "turned_age"
+              regex: "\\b(?:turned|turns|turning)\\s+(\\d{1,3})\\b"
+              score: 1
+        - name: "Gender" # taken from ai4privacy/pii-masking-openpii-1m training data GENDER list
+          supported_entity: "GENDER"
+          supported_language: "en"
+          deny_list:
+            - "Male"
+            - "Agender"
+            - "Genderqueer"
+            - "Androgynous"
+            - "Bigender"
+            - "Genderfluid"
+            - "Female"
+            - "Non-binary"
+            - "Transgender"
+        - name: "Title Recognizer" # taken from ai4privacy/pii-masking-openpii-1m training data TITLE list
+          supported_entity: "TITLE"
+          supported_language: "en"
+          deny_list:
+            - "Amb"
+            - "Prof"
+            - "Honourable"
+            - "Mx"
+            - "Capt"
+            - "Miss"
+            - "Gov"
+            - "Eng"
+            - "Minister"
+            - "Professor"
+            - "Councillor"
+            - "Premier"
+            - "Master"
+            - "President"
+            - "Captain"
+            - "Adv"
+            - "Madame"
+            - "Notary"
+            - "Senator"
+            - "Director"
+            - "Mayor"
+            - "Pres"
+            - "Mag"
+            - "Principal"
+            - "Delegate"
+            - "Ambassador"
+            - "Governor"
+            - "Prefect"
+            - "Mrs"
+            - "Sec"
+            - "Officer"
+            - "Cllr"
+            - "Hon"
+            - "Sen"
+            - "Advocate"
+            - "Mr"
+            - "Engineer"
+            - "Min"
+            - "Doctor"
+            - "Dean"
+            - "Dr"
+            - "Mister"
+            - "Solicitor"
+            - "Judge"
+            - "Secretary"
+            - "Solicit"
+            - "Assistant"
+            - "Magistrate"
+            - "Ass"
+            - "Manager"
+            - "Ofc"
+            - "Pref"
+            - "Del"
+            - "Attorney"
+            - "Mstr"
+            - "Att"
+            - "Mayoress"
+      # curated for the AI4Privacy PII Types
+      input:
+        entities: [ ]

@@ -1,0 +1,17 @@
+passthrough: true
+rails:
+  config:
+    sensitive_data_detection:
+      input:
+        entities:
+        - CA_PASSPORT
+      recognizers:
+      - name: Canadian Passport
+        patterns:
+        - name: canada_passport_regex
+          regex: (\b[A-Z]{2}[0-9]{6}\b)
+          score: 1
+        supported_entity: CA_PASSPORT
+  input:
+    flows:
+    - block_sensitive_data_on_input

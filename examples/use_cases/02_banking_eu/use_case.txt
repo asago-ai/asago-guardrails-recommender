@@ -1,0 +1,181 @@
+EuroBank Customer Service Assistant
+
+SYSTEM OVERVIEW
+
+EuroBank is a conversational AI assistant deployed within the digital banking platform of a pan-European retail bank serving 3.2 million customers across 12 EU member states (Germany, France, Italy, Spain, Netherlands, Belgium, Poland, Austria, Ireland, Portugal, Finland, Greece). Launched in June 2025 after 18 months of development at a cost of €4.5M, the system handles 580,000 customer conversations per month with an average resolution time of 2.1 minutes compared to 14 minutes for human contact center agents.
+
+The assistant operates 24/7 through mobile banking app (iOS, Android), web portal, and WhatsApp Business integration, providing customer support for account inquiries, SEPA payment processing, transaction disputes, KYC (Know Your Customer) compliance updates, card management, and loan inquiries. The system achieved 82% autonomous resolution rate in production across all supported languages (English, German, French, Italian, Spanish, Dutch, Polish).
+
+Geographic coverage: Headquarters in Frankfurt, Germany. Customer base distributed across 12 EU countries with largest segments in Germany (38%), France (22%), Italy (16%), Spain (12%). Regulatory oversight by European Central Bank (ECB), national competent authorities, and European Banking Authority (EBA).
+
+ARCHITECTURE & INTEGRATION
+
+Foundation model: Claude 3.5 Sonnet (Anthropic) with 200K context window
+Deployment: AWS EU-Central-1 (Frankfurt) region for GDPR data residency requirements
+Multi-language support: Native support for 7 EU languages via prompt engineering; translation layer for Polish, Greek, Finnish
+RAG pipeline: Amazon Kendra enterprise search over 480,000 compliance documents including GDPR policies, PSD2 technical standards, national banking regulations, and 3.2M customer financial profiles stored in Temenos core banking system
+
+The assistant has direct integration with backend banking APIs:
+- get_account_balance(): Read access to customer IBAN accounts, current balances, available credit, transaction history (up to 7 years); supports multi-currency accounts (EUR, USD, GBP, CHF, PLN)
+- process_sepa_payment(): Execute Single Euro Payments Area (SEPA) credit transfers; supports instant payments (SCT Inst) and standard transfers; validates IBAN format, beneficiary name matching, and sanctions screening
+- dispute_transaction(): File transaction dispute cases for unauthorized charges, merchant disputes, and suspected fraud; integrates with card network chargeback systems (Visa, Mastercard)
+- update_kyc_info(): Modify customer Know Your Customer data including fiscal codes (Italian Codice Fiscale, Spanish NIE/NIF), VAT identification numbers, proof of address, employment status, beneficial ownership declarations
+- retrieve_tax_documents(): Download annual tax statements (IRS forms for US persons, EU tax certificates), interest income reports, and investment gain/loss summaries for tax filing purposes
+- schedule_payment(): Set up recurring SEPA Direct Debits, standing orders, and future-dated transfers with customizable frequency (monthly, quarterly, annual)
+- manage_cards(): Report lost/stolen cards, request replacement cards, modify spending limits, enable/disable international transactions, manage contactless payment settings
+- check_loan_eligibility(): Pre-qualification check for personal loans, mortgages, and overdraft facilities based on credit scoring and debt-to-income ratio
+- verify_identity(): Two-factor authentication via SMS OTP, mobile app biometrics (Face ID, fingerprint), or hardware token; required for sensitive operations
+
+OPERATIONAL CONTEXT
+
+Performance metrics (June-December 2025):
+- 580,000 conversations/month (19,300/day average, 32,000/day peak during month-end)
+- 2.1 minute average resolution time (vs. 14 minutes human baseline)
+- 82% autonomous resolution rate without human escalation
+- 91% customer satisfaction score (CSAT) for successful resolutions
+- 18% escalation rate for complex fraud investigations, loan underwriting, or ambiguous regulatory interpretation
+- 127 languages detected in customer input (auto-translation for unsupported languages triggers human escalation)
+
+Transaction volume & thresholds:
+- 1.2M SEPA payments processed autonomously (€840M total value, average €700 per transaction)
+- Autonomous approval limits: €5,000 per transaction, €15,000 per day, €50,000 per month
+- Transactions exceeding limits trigger two-factor authentication and manual review queue
+- Cross-border payments outside EU (SWIFT) require human verification regardless of amount
+- High-risk jurisdictions (FATF blacklist, sanctions lists) blocked at API layer
+
+Human-in-the-loop policies:
+- Automatic escalation for: suspected fraud or money laundering (AML triggers), sanctions screening hits, large transactions (>€25,000), beneficial ownership changes, politically exposed persons (PEP) status updates, account closure requests
+- Manual review queue: disputed transactions with conflicting evidence, loan applications near approval threshold, KYC documents with OCR uncertainty, cross-border inheritance cases
+- No human verification required for: account balance inquiries, transaction history downloads, card spending limit increases (within pre-approved range), tax document retrieval, standing order modifications, customer profile updates (address, phone, email)
+
+Response grounding & validation:
+- All transaction confirmations must cite unique transaction reference ID (ISO 20022 End-to-End ID)
+- SEPA payment beneficiary names validated against IBAN registry; mismatches trigger warning or block
+- Regulatory answers grounded in specific GDPR articles, PSD2 technical standards, or national banking law references
+- KYC document processing includes automated verification via Onfido identity verification API; passport/ID card OCR cross-checked against customer-provided data
+- Fraud scoring: Feedzai real-time transaction monitoring scores every payment; scores >0.75 trigger human review
+
+COMPLIANCE & RISK CONTEXT
+
+GDPR & data protection scope: System processes personal data for 3.2M EU customers including:
+- National identity numbers: Italian Codice Fiscale, Spanish DNI/NIE/NIF, German Steuer-ID, French Numéro de Sécurité Sociale, UK National Insurance Number (NINO), Polish PESEL
+- Financial identifiers: IBAN (International Bank Account Numbers), BIC/SWIFT codes, payment card numbers (PAN), credit scores
+- Sensitive personal data: Tax residency status, employment income, source of wealth, politically exposed person (PEP) status
+- Biometric data: Face ID templates, fingerprints (mobile app authentication)
+- Transaction data: 7 years of transaction history per EU retention requirements
+
+Regulatory framework:
+- GDPR (General Data Protection Regulation): Article 22 automated decision-making provisions require human review option for loan rejections
+- PSD2 (Payment Services Directive 2): Strong Customer Authentication (SCA) for payments >€30, remote authentication, transaction risk analysis exemptions
+- AML5 (5th Anti-Money Laundering Directive): Customer due diligence, beneficial ownership registers, PEP screening, suspicious activity reporting (SAR) to national FIUs
+- EBA Guidelines on ICT Risk Management: operational resilience, incident reporting, third-party risk (AWS, Anthropic model dependency)
+- National regulations: German BaFin supervision, French ACPR licensing, Italian Banca d'Italia oversight, Spanish Banco de España consumer protection rules
+
+Consequences of errors:
+- Unauthorized payment execution: customer refund claims under PSD2 liability rules (€50 customer liability cap), potential regulator complaint, operational loss (€200K-€2M/month exposure)
+- KYC data errors: incorrect tax residency determination causes FATCA/CRS reporting failures; penalties from national tax authorities (€5,000-€50,000 per incorrect report)
+- GDPR violations: unlawful data disclosure to unauthorized party triggers breach notification to supervisory authority within 72 hours; potential fines up to 4% annual global revenue (€180M maximum for EuroBank)
+- AML failures: missed sanctions screening hit causes transaction to prohibited jurisdiction; regulatory fine (€1M-€10M range), potential license restrictions
+- Fraud losses: incorrectly approved fraudulent transaction not covered by customer protection rules; bank absorbs loss (average €8,400 per incident)
+
+PSD2 Strong Customer Authentication (SCA) requirements:
+- All payment initiation requires two authentication factors (possession: mobile device, knowledge: PIN, inherence: biometric)
+- Exemptions allowed: low-risk transactions flagged by Feedzai fraud scoring (<0.15 risk score), trusted beneficiaries, low-value payments (<€30)
+- Model cannot bypass SCA requirements; authentication challenge presented via mobile app
+
+REAL-WORLD INCIDENTS & LESSONS
+
+August 2025 SEPA payment fraud incident: Customer reported unauthorized payment of €4,800 to Romanian IBAN. Investigation revealed account takeover via stolen SMS OTP; attacker conversed with AI assistant to add new beneficiary and execute payment. AI did not detect anomalous behavior (first payment to Romania, new beneficiary added in same session).
+
+Root cause: Lack of behavioral anomaly detection in conversational context. AI assistant processed requests within technical transaction limits but missed contextual red flags. Fix: Added session-level anomaly scoring (new beneficiary + immediate large payment = high-risk pattern requiring additional authentication).
+
+October 2025 KYC document processing error: Italian customer's Codice Fiscale incorrectly parsed by OCR from uploaded passport photo. Wrong fiscal code propagated to tax reporting system, causing FATCA/CRS reporting error to Italian Revenue Agency. Customer contacted by tax authority about discrepancy.
+
+Root cause: OCR confidence threshold set too low (0.65) to maximize throughput; incorrect character substitution (O vs 0) not caught by validation logic. Fix: Increased OCR confidence threshold to 0.85, added Codice Fiscale checksum validation, human review queue for mismatches.
+
+November 2025 sanctions screening bypass: Payment to Belarusian IBAN processed despite EU sanctions regime. Beneficiary IBAN belonged to sanctioned entity but was not flagged by sanctions screening API due to name variation (Cyrillic vs. Latin transliteration mismatch).
+
+Root cause: Sanctions list matching relied on exact name match; did not account for transliteration variants or alias names. Fix: Enhanced fuzzy matching algorithm, integrated OFAC/EU consolidated sanctions list with alias expansion, all payments to Belarus/Russia now require manual review regardless of match score.
+
+December 2025 GDPR data access request incident: Customer exercised Article 15 GDPR right to access all personal data. AI assistant provided transaction history download but omitted fraud scoring metadata and credit decisioning factors. Customer filed complaint with Irish Data Protection Commission alleging incomplete disclosure.
+
+Root cause: RAG retrieval excluded certain "internal use" data fields from customer-facing responses. GDPR Article 15 requires disclosure of all processing including automated decision-making logic. Fix: Created separate data access request flow with comprehensive data export including fraud scores, credit decision factors, and processing logic explanations.
+
+STAKEHOLDERS & DEPENDENCIES
+
+Primary stakeholders:
+- Retail customers (3.2M active digital banking users across 12 EU countries)
+- Contact center operations (840 FTE staff across 6 countries, 35% workload reduction target)
+- Fraud & AML compliance (120 analysts, transaction monitoring, SAR filing)
+- Product management (payments, cards, loans, deposits)
+- Risk management (credit risk, operational risk, model risk)
+- Data protection officer (GDPR compliance, data subject rights, breach response)
+- Technology & cybersecurity (API security, fraud prevention, incident response)
+
+Regulatory & supervisory bodies:
+- European Central Bank (ECB) - prudential supervision under Single Supervisory Mechanism (SSM)
+- National competent authorities: BaFin (Germany), ACPR (France), Banca d'Italia, Banco de España
+- European Banking Authority (EBA) - regulatory technical standards, stress testing
+- Data protection authorities: Irish DPC (lead supervisory authority under GDPR one-stop-shop), national DPAs
+- Financial Intelligence Units (FIUs) - suspicious activity reporting, AML investigations
+
+External dependencies:
+- Temenos core banking system (account balances, transaction posting, customer master data)
+- SWIFT network (cross-border payments, IBAN validation, BIC directory)
+- Card networks: Visa, Mastercard (chargeback processing, fraud liability shift)
+- Onfido identity verification (KYC document OCR, biometric face matching, liveness detection)
+- Feedzai fraud scoring (real-time transaction risk scoring, AML transaction monitoring)
+- AWS infrastructure (compute, storage, networking in EU-Central-1 region)
+- Anthropic Claude API (model inference, content filtering, prompt caching)
+- Sanctions screening: Dow Jones Risk & Compliance (OFAC, EU, UN consolidated lists with daily updates)
+
+CONSTRAINTS & LIMITATIONS
+
+Technical constraints:
+- Temenos API rate limits: 500 requests/second per environment; peak load requires request queuing and retry logic
+- Claude 3.5 Sonnet latency: 1.5-3 second response time for complex multi-step transactions (customer tolerance threshold ~4 seconds for financial operations)
+- SEPA Instant Payment settlement: <10 second end-to-end requirement from customer confirmation to beneficiary credit; includes AI processing, fraud scoring, sanctions screening, and core banking posting
+- Multi-language context window: 7 concurrent languages in prompt engineering reduces effective context for RAG retrieval; German/French conversations use 40% more tokens than English
+- AWS Frankfurt region: GDPR data residency requires all customer data processing in EU; cross-region disaster recovery to EU-West-1 (Ireland) adds replication latency
+
+Operational constraints:
+- No cross-account operations: single LLM session cannot transfer funds between different customer accounts (requires separate authenticated sessions)
+- No investment advice: MiFID II regulations prohibit automated investment recommendations without suitability assessment; model limited to factual information about existing holdings
+- No loan underwriting: credit decisions require human approval per EBA guidelines on AI in credit assessment; model provides pre-qualification estimates only
+- Limited dispute resolution: chargeback representment and fraud investigation require human case management; model can initiate dispute but not adjudicate outcome
+
+Regulatory & compliance constraints:
+- PSD2 SCA mandate: cannot reduce authentication requirements below regulatory minimum (two-factor authentication for payments)
+- GDPR Article 22: automated decisions with legal/significant effects (loan rejections, account closures) require human review option
+- AML Customer Due Diligence: high-risk customers (PEPs, high-value transactions) require enhanced due diligence with human verification
+- Data localization: customer data cannot leave EU without adequate safeguards (Standard Contractual Clauses, adequacy decision); limits cloud provider options
+- Model explainability: EBA expects explainable AI for credit and fraud decisions; LLM "black box" requires compensating controls (audit logging, human oversight, model cards)
+
+Financial crime limitations:
+- Sanctions screening: real-time screening against 180,000+ sanctioned entities; 2-5% false positive rate requires human review queue
+- Money laundering detection: transaction monitoring rules generate 12,000 alerts/month (98% false positives); AI triage reduces analyst workload but cannot auto-close alerts
+- Fraud typology coverage: model trained on historical fraud patterns; novel attack vectors (synthetic identity fraud, authorized push payment scams) require continuous retraining
+- Cross-border complexity: 12 EU countries have different fraud liability rules, chargeback time limits, and dispute resolution procedures
+
+DEPLOYMENT SCALE & TIMELINE
+
+Development timeline:
+- December 2023: Project kickoff, regulatory impact assessment, vendor selection (Anthropic Claude vs. OpenAI vs. open-source)
+- February 2024: GDPR Data Protection Impact Assessment (DPIA), EBA AI risk assessment, internal audit review
+- April 2024: Temenos API integration development, SEPA payment validation logic, sanctions screening integration
+- July 2024: RAG pipeline development, compliance document ingestion (GDPR, PSD2, national banking laws), multi-language prompt engineering
+- October 2024: Internal pilot with 200 bank employees (8,000 test conversations across 7 languages)
+- March 2025: Limited production release to 50,000 customers in Germany and Netherlands (low-risk markets)
+- June 2025: Full production release to all 3.2M customers across 12 EU countries
+- Ongoing: Bi-weekly model fine-tuning on anonymized conversation data, monthly fraud pattern updates, quarterly regulatory compliance reviews
+
+Team composition:
+- 6 ML engineers (LLM fine-tuning, RAG optimization, multi-language prompt engineering, fraud pattern recognition)
+- 5 backend engineers (Temenos API integration, SEPA payment processing, sanctions screening, real-time fraud scoring)
+- 2 compliance officers (GDPR, PSD2, AML, regulatory change management)
+- 2 fraud analysts (fraud typology definition, case review, false positive tuning)
+- 1 UX designer (conversational flow, multi-language localization, accessibility)
+- 1 product manager (stakeholder coordination, regulatory roadmap, country rollout)
+- 1 cloud architect (AWS infrastructure, data residency, disaster recovery)
+
+Current status: Production deployment serving 580,000 conversations/month across 12 EU countries with 82% autonomous resolution rate. Roadmap includes: investment portfolio rebalancing automation (Q2 2026 pending MiFID II legal review), voice banking via phone channel with speaker verification (Q3 2026), open banking API aggregation under PSD2 Account Information Services (Q4 2026).

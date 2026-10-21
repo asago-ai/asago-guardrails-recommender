@@ -1,0 +1,30 @@
+passthrough: true
+rails:
+  config:
+    sensitive_data_detection:
+      input:
+        entities:
+        - AGE
+      recognizers:
+      - name: Age Recognizer
+        patterns:
+        - name: age_keyword
+          regex: \bage[sd]?\s*:?\s*(\d{1,3})\b
+          score: 1
+        - name: year_old
+          regex: \b(\d{1,3})[- ]year[s]?[- ]old\b
+          score: 1
+        - name: years_of_age
+          regex: \b(\d{1,3})\s+years?\s+of\s+age\b
+          score: 1
+        - name: born_in_year
+          regex: \bborn\s+in\s+(\d{4})\b
+          score: 1
+        - name: turned_age
+          regex: \b(?:turned|turns|turning)\s+(\d{1,3})\b
+          score: 1
+        supported_entity: AGE
+        supported_language: en
+  input:
+    flows:
+    - block_sensitive_data_on_input

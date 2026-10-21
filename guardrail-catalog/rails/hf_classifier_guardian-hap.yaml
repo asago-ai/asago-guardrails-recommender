@@ -1,0 +1,14 @@
+passthrough: true
+rails:
+  config:
+    hf_classifier:
+      guardian-hap:
+        blocked_labels:
+        - LABEL_1
+        engine: local
+        model: RedHatAI/granite-guardian-hap-125m
+        task: text-classification
+        threshold: 0.5
+  input:
+    flows:
+    - hf_classifier check windowed input $classifer=guardian-hap
