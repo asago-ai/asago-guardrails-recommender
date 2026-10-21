@@ -7,10 +7,10 @@ Static replay of the policy-driven agentic red teaming pipeline: Policy Mapper (
 Open `index.html` directly in your browser, or serve with:
 
 ```sh
-python3 -m http.server 8000
+python3 -m http.server 8080
 ```
 
-Then visit `http://localhost:8000/`.
+Any free port works. Then visit `http://localhost:8080/`.
 
 ## Rebuild Data
 
@@ -26,7 +26,3 @@ uv run asago-guardrails-recommender snapshot \
 ```
 
 Run `uv run asago-guardrails-recommender snapshot --help` for all options and defaults.
-
-## Credits
-
-Vendor assets (PatternFly CSS, branding, logo) are from [asago-examples PR #35](https://github.com/trustyai-explainability/asago-examples/pull/35).
