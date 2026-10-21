@@ -2,13 +2,6 @@
 
 This directory contains third-party assets for the ASAGO recommender HTML demo.
 
-## Origin
-
-All assets are sourced from the ASAGO examples repository (asago-examples-pr35):
-- **Repository**: https://github.com/asago-ai/asago-examples
-- **Branch/PR**: PR #35
-- **Source directory**: `/docs/demo/assets/` and `/docs/demo/`
-
 ## Assets
 
 - **patternfly.css** (2.3 MB)
