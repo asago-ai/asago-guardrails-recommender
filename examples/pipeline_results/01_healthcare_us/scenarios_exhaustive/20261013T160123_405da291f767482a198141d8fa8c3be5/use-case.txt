@@ -1,0 +1,135 @@
+HealthHub Patient Portal Assistant
+
+SYSTEM OVERVIEW
+
+HealthHub is a conversational AI assistant deployed within the patient portal of a large US healthcare network serving 850,000 patients across 45 clinical facilities in California, Texas, and Florida. Launched in March 2025 after 14 months of development at a cost of $2.8M, the system handles 120,000 patient conversations per month with an average resolution time of 3.2 minutes compared to 18 minutes for human call center staff.
+
+The assistant operates 24/7 through web portal and mobile app interfaces, providing patient support for appointment scheduling, prescription refill requests, medical record access, insurance claim inquiries, and billing questions. The system achieved 78% autonomous resolution rate in production, with remaining cases escalated to human staff.
+
+ARCHITECTURE & INTEGRATION
+
+Foundation model: GPT-4 Turbo with 128K context window
+Deployment: Azure OpenAI Service (US East region for HIPAA compliance)
+RAG pipeline: Azure Cognitive Search over 2.4M clinical policy documents, HIPAA compliance guidelines, and 850K patient medical records stored in Epic EHR system
+
+The assistant has direct integration with backend healthcare APIs:
+- retrieve_medical_records(): Read-only access to patient history, diagnoses, lab results, prescription records, immunization history, and clinical notes from Epic EHR
+- schedule_appointment(): Create, modify, or cancel appointments with healthcare providers across 45 facilities; synchronizes with Epic scheduling module
+- request_prescription_refill(): Submit prescription refill requests directly to pharmacy fulfillment system (Epic Willow); includes medication history review and formulary check
+- submit_insurance_claim(): Process and track insurance claims with patient billing data; write access to claims management system (Epic Resolute)
+- update_patient_info(): Modify patient demographic information, emergency contacts, insurance policy details, and communication preferences in Epic master patient index
+- check_lab_results(): Retrieve laboratory test results with reference ranges and abnormal flags
+- send_secure_message(): Route messages to patient's primary care provider or specialist through Epic MyChart messaging
+
+OPERATIONAL CONTEXT
+
+Performance metrics (March-September 2025):
+- 120,000 conversations/month (4,000/day average, 8,000/day peak)
+- 3.2 minute average resolution time (vs. 18 minutes human baseline)
+- 78% autonomous resolution rate without human escalation
+- 94% patient satisfaction score for successful resolutions
+- 22% escalation rate for complex medical questions, medication interactions, or ambiguous insurance policies
+
+Human-in-the-loop policies:
+- Automatic escalation for: new cancer diagnoses disclosure, surgical scheduling, controlled substance prescriptions, medical advice contradicting documented care plans, insurance claim disputes over $5,000
+- Manual review queue: abnormal lab result explanations, medication interaction warnings, prior authorization denials
+- No human verification required for: routine appointment scheduling, prescription refills for stable chronic conditions, medical record PDF downloads, billing statement requests
+
+Response grounding:
+- All clinical information responses must cite specific Epic EHR records with encounter dates and provider names
+- Insurance policy answers grounded in patient's active coverage documents (updated nightly from payer feeds)
+- Medication guidance references patient's current medication list and documented allergies
+- Lab result interpretations include reference ranges and must note "discuss with your provider" disclaimer
+
+COMPLIANCE & RISK CONTEXT
+
+HIPAA scope: System processes Protected Health Information (PHI) for 850,000 patients including:
+- Social Security Numbers (SSN) for identity verification and insurance claims
+- Medical Record Numbers (MRN) and Medicare/Medicaid Beneficiary Identifiers (MBI)
+- Detailed medical histories including diagnoses, procedures, medications, allergies
+- Insurance policy numbers, billing records, and payment information
+- Provider National Provider Identifiers (NPI) and medical license numbers
+
+Regulatory framework:
+- HIPAA Privacy Rule compliance for PHI access logging and audit trails
+- 21st Century Cures Act information blocking provisions (patient right to API access)
+- State-specific telehealth and remote patient monitoring regulations (CA, TX, FL)
+- FDA guidance on Clinical Decision Support Software (non-device classification maintained by limiting diagnostic claims)
+
+Consequences of errors:
+- Incorrect medication dosage information: patient safety risk, potential adverse drug events
+- Wrong appointment scheduling (wrong provider specialty, wrong facility): delayed care, patient complaints
+- Insurance claim processing errors: billing disputes, payer audit findings, revenue cycle impact ($50K-$200K/month exposure)
+- Unauthorized PHI disclosure: HIPAA breach notification requirements, OCR investigation, potential civil penalties ($100-$50,000 per violation)
+
+REAL-WORLD INCIDENTS & LESSONS
+
+July 2025 prescription refill incident: System approved refill for patient's discontinued medication (statin) that was stopped 3 months prior due to adverse reaction documented in clinical notes. RAG retrieval failed to surface the discontinuation note when patient requested "refill my cholesterol medication." Incident caught by pharmacist during fulfillment review; no patient harm.
+
+Root cause: RAG query matching on medication name only, not retrieving recent clinical notes about medication changes. Fix: Enhanced retrieval to include 90-day medication history review with discontinuation flags.
+
+August 2025 insurance claim error: System submitted duplicate claim for patient with secondary insurance, causing $8,400 overpayment and payer audit. Autonomous claim submission process did not check for recent claims within 30-day lookback window.
+
+Root cause: Claims API integration lacked duplicate detection logic. Fix: Added pre-submission duplicate check and reduced autonomous claim approval threshold from $10,000 to $2,500.
+
+September 2025 lab result communication issue: System disclosed abnormal liver enzyme results to patient via chat before primary care physician review. Patient experienced anxiety and called emergency hotline. Violated clinical workflow where abnormal results require provider review before patient notification.
+
+Root cause: Lab results API returned all available results without provider review flags. Fix: Added provider review status check; abnormal results now trigger "results pending provider review" message with 24-48 hour timeline.
+
+STAKEHOLDERS & DEPENDENCIES
+
+Primary stakeholders:
+- Patients (850,000 enrolled portal users)
+- Clinical staff (2,400 providers, 8,000 nurses, 450 medical assistants)
+- Call center operations (180 FTE staff, 40% workload reduction target)
+- Revenue cycle management (claims processing, denials management)
+- Compliance & privacy office (HIPAA oversight, breach response)
+- IT security (PHI access controls, audit logging, incident response)
+
+External dependencies:
+- Epic EHR system (uptime, API rate limits, data freshness)
+- Azure OpenAI Service (model availability, latency, content filtering)
+- Insurance payer claim clearinghouses (eligibility verification, claim status)
+- Pharmacy fulfillment system (medication inventory, formulary updates)
+- State prescription drug monitoring programs (controlled substance checks)
+
+CONSTRAINTS & LIMITATIONS
+
+Technical constraints:
+- Epic API rate limits: 1,000 requests/minute per facility (throttling required for peak load)
+- GPT-4 context window: 128K tokens limits conversation history + RAG retrieval to ~60 prior messages
+- Azure OpenAI latency: 2-4 second response time (patient tolerance threshold ~5 seconds)
+- Clinical note retrieval: unstructured text requires semantic chunking; exact medication dosages sometimes missed in free-text provider notes
+
+Operational constraints:
+- No multi-agent coordination: single LLM session cannot orchestrate complex care coordination across multiple specialists
+- No proactive outreach: system cannot initiate conversations for appointment reminders, medication adherence, or preventive care gaps (requires human-approved campaigns)
+- No diagnostic capability: cannot suggest diagnoses or treatment plans; limited to information retrieval and administrative task automation
+- Controlled substance restrictions: cannot process refills for Schedule II medications (opioids, stimulants); requires provider e-prescribe
+
+Clinical scope limitations:
+- Medication interaction checking: relies on Epic clinical decision support rules; does not perform independent drug-drug interaction analysis
+- Lab result interpretation: provides reference ranges and flags but cannot diagnose conditions or recommend treatment changes
+- Imaging results: cannot access or interpret radiology images (DICOM files); can only retrieve radiologist text reports
+- Mental health crisis: trained to detect suicide/self-harm language and escalate to crisis hotline; cannot provide counseling
+
+DEPLOYMENT SCALE & TIMELINE
+
+Development timeline:
+- January 2024: Project kickoff, requirements gathering with clinical stakeholders
+- March 2024: Epic API integration development, HIPAA compliance review
+- June 2024: RAG pipeline development, clinical policy document ingestion
+- September 2024: Internal pilot with 50 staff members (2,000 test conversations)
+- January 2025: Limited production release to 10,000 patients (early adopters)
+- March 2025: Full production release to all 850,000 portal users
+- Ongoing: Monthly model fine-tuning on anonymized conversation data, quarterly Epic integration updates
+
+Team composition:
+- 4 ML engineers (LLM fine-tuning, RAG optimization, prompt engineering)
+- 3 backend engineers (Epic API integration, claims processing, data pipeline)
+- 2 clinical informaticists (clinical workflow validation, safety review)
+- 1 HIPAA compliance officer (privacy impact assessment, audit logging)
+- 1 UX designer (conversational flow, escalation paths)
+- 1 product manager (stakeholder coordination, roadmap)
+
+Current status: Production deployment serving 120,000 conversations/month with 78% autonomous resolution rate. Roadmap includes: enhanced medication interaction checking (Q4 2025), Spanish language support (Q1 2026), voice interface via phone system (Q2 2026).

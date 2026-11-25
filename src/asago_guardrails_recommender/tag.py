@@ -193,6 +193,12 @@ def tag_attack(
     return _merge_signals(deterministic, llm_result)
 
 
+def safe_request_error(e: requests.RequestException) -> str:
+    """Describe a request failure without the URL or host (they can name the cluster)."""
+    status = getattr(getattr(e, "response", None), "status_code", None)
+    return f"{type(e).__name__}" + (f" (HTTP {status})" if status else "")
+
+
 def _hash_attack_id(attack_id: str) -> str:
     """Hash attack_id to a short filename."""
     return hashlib.sha256(attack_id.encode()).hexdigest()[:16]
@@ -287,7 +293,7 @@ def _call_tagger_llm(
         return result
 
     except requests.RequestException as e:
-        raise RuntimeError(f"LLM API call failed: {e}") from e
+        raise RuntimeError(f"LLM API call failed: {safe_request_error(e)}") from e
 
 
 def _extract_json(text: str) -> dict | None:

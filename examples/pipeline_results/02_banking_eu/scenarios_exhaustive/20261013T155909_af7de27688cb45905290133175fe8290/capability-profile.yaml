@@ -1,0 +1,96 @@
+zones_active:
+- input
+- memory
+- reasoning
+- tool_execution
+entry_points:
+- name: customer requests via banking app and web interface
+  entry_point_type: other
+  direction: bidirectional
+  controllability: direct
+  entry_point_id: ep:v1:4012e199b8e335bd87b8fa79c992022a
+confidence: high
+kc_subcodes:
+- KC1.1
+- KC2.1
+- KC3.3
+- KC4.3
+- KC5.3
+- KC6.1.2
+- KC6.3.2
+- KC6.3.3
+- KCX-HITL
+- KCX-PMEM
+tool_inventory:
+- name: account information retrieval API
+  description: Retrieves customer account details, balances, and transaction history
+  tool_id: tool:v1:24a730025b9eff19e115cfc8e9830274
+- name: payment processing API
+  description: Processes payments, transfers and wire instructions
+  tool_id: tool:v1:ca0a1801676b0316f9f2119f5f49d2ca
+- name: loan management API
+  description: Manages loan applications, approvals, and payment schedules
+  tool_id: tool:v1:3381b71c4561733b601a4be657794c7a
+- name: risk assessment API
+  description: Evaluates credit risk and compliance for customer transactions
+  tool_id: tool:v1:160cc0c6c02bd0560eb1957d04643316
+- name: customer data store API
+  description: Accesses authenticated customer personal and financial information
+  tool_id: tool:v1:42aa930829ebbb5d07ac4e4fb1931dfb
+- name: human agent escalation
+  description: Routes complex requests to human banking specialists
+  tool_id: tool:v1:34fe329b6b46631383354a9933e3fab4
+- name: RAG knowledge retrieval
+  description: Retrieves bank policies, regulations and compliance documentation
+  tool_id: tool:v1:9ee6557c598388d69979d25e3d1ce84e
+entry_point_completeness: inferred_partial
+entry_point_evidence: []
+tool_inventory_completeness: inferred_partial
+tool_inventory_evidence: []
+trust_boundaries:
+- name: customer-input-to-reasoning
+  from_zone: input
+  to_zone: reasoning
+  controls:
+  - input validation
+  - fraud detection
+  confidence: explicit
+  trust_boundary_id: tb:v1:f7f84dc98382f3e07c1f258969c51212
+- name: reasoning-to-tool-execution
+  from_zone: reasoning
+  to_zone: tool_execution
+  controls:
+  - authorization checks
+  - transaction limits
+  confidence: explicit
+  trust_boundary_id: tb:v1:2038a145626ff9eeaad33bb817afdc25
+external_integrations:
+- name: core banking backend systems
+  integration_type: api
+  auth_method: service_account
+  data_sensitivity: high
+  integration_id: int:v1:38c6294f992d6ae8f9eb8e0a9a82b635
+- name: customer financial data repository
+  integration_type: api
+  auth_method: service_account
+  data_sensitivity: high
+  integration_id: int:v1:9eecc494c51bf96ce76c9da37b997760
+- name: regulatory compliance knowledge base
+  integration_type: api
+  auth_method: service_account
+  data_sensitivity: medium
+  integration_id: int:v1:d3b3cf5c74d78320c258fe2bd704a7b3
+has_persistent_memory: true
+multi_agent: false
+hitl: true
+kc_subcodes_display:
+  KC1.1: Large Language Model (LLM)
+  KC2.1: Predefined workflows
+  KC3.3: Chain of Thought (CoT)
+  KC4.3: In-agent, cross-session memory
+  KC5.3: Managed API
+  KC6.1.2: Extensive API access
+  KC6.3.2: Database full CRUD
+  KC6.3.3: RAG context data sources
+  KCX-HITL: System has human-in-the-loop review or approval controls
+  KCX-PMEM: System has persistent memory architecture (cross-session state)
