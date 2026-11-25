@@ -35,8 +35,14 @@
     isUntagged: (a) => !(a.signals || []).length && !(a.candidates || []).length && !(a.tests || []).length,
     options: (a) => (a.recommendation && a.recommendation.options) || [],
     isGap: (a) => !!a.recommendation && a.recommendation.status === "gap",
-    recommendedRails(a) { const s = new Set(); Data.options(a).forEach((o) => (o.rails || []).forEach((r) => s.add(r))); return s; },
-    blockedByAny(a) { return (a.tests || []).length ? a.tests.some((x) => x.status === "blocked") : null; },
+    recommendedRails(a) { const s = new Set(); Data.options(a).forEach((o) => [...(o.input_rails || []), ...(o.output_rails || [])].forEach((r) => s.add(r))); return s; },
+    optionTest: (a, rank) => (a.tests || []).find((t) => t.option_rank === rank) || null,
+    blocked: (t) => t.outcome === "blocked_input" || t.outcome === "blocked_output",
+    blockedByAny(a) {
+      const ts = a.tests || [];
+      if (!ts.length || ts.every((t) => t.outcome === "error")) return null;
+      return ts.some(Data.blocked);
+    },
     blockedCount: (uc) => Data.attacks(uc).filter((a) => Data.blockedByAny(a)).length,
     threatName(uc, id) {
       const t = Data.threats(uc).find((x) => x.threat_id === id);
@@ -59,17 +65,6 @@
         };
       });
     },
-    perRail(uc) {
-      const m = {};
-      Data.attacks(uc).forEach((a) =>
-        (a.tests || []).filter((t) => (t.rails || []).length === 1).forEach((t) => {
-          const r = (m[t.rails[0]] = m[t.rails[0]] || { id: t.rails[0], tested: 0, blocked: 0 });
-          r.tested++;
-          if (t.status === "blocked") r.blocked++;
-        })
-      );
-      return Object.values(m).sort((x, y) => y.blocked - x.blocked || y.tested - x.tested);
-    },
     prov: (uc, k) => ((uc.provenance && uc.provenance.stages) || {})[k] || {},
     replayDate() {
       const d = new Date(SNAP.generated_at);
@@ -78,8 +73,9 @@
   };
 
   const shortId = (a) => a.short_id || String(a.attack_id).slice(-8);
-  const stateOf = (a) => (Data.isUntagged(a) ? "na" : Data.blockedByAny(a) ? "blocked" : "open");
-  const stateLabel = (a) => ({ na: "Untagged", blocked: "Blocked", open: "Not blocked" })[stateOf(a)];
+  const stateOf = (a) => { if (Data.isUntagged(a)) return "na"; const b = Data.blockedByAny(a); return b === null ? "untested" : b ? "blocked" : "open"; };
+  const stateLabel = (a) => ({ na: "Untagged", blocked: "Blocked", open: "Not blocked", untested: "Not tested" })[stateOf(a)];
+  const catalogCount = () => (SNAP.catalog && SNAP.catalog.count != null ? SNAP.catalog.count : Data.rails().length);
 
   /* ---------- state ---------- */
   const state = {
@@ -93,6 +89,7 @@
     open: new Set(),
     sfilter: "",
     sshown: 20,
+    bshown: 25, // benign requests shown in the Benign requests tab
     scn: null,
     risk: null,
     runAll: false,
@@ -262,12 +259,19 @@
       (v.scores ? `<div class="chiprow">${Object.keys(v.scores).map((k) => chip(k.replace(/_/g, " ") + " " + v.scores[k] + "/2")).join("")}</div>` : "") +
       `<h4 class="sub">Detector rubric (how success is judged)</h4>${rubricHTML(a)}`;
   }
+  /* "47 attack_succeeded, 1 inconclusive" for the attacks of one use case, counted by baseline_outcome */
+  function baselineCounts(list) {
+    const counts = {};
+    list.forEach((x) => { const k = x.baseline_outcome || "unknown"; counts[k] = (counts[k] || 0) + 1; });
+    return Object.keys(counts).sort().map((k) => counts[k] + " " + k).join(", ") || "none";
+  }
   function baselineHTML(c) {
     const p = artProv(c), b = p.baseline || {}, o = b.outcomes || {};
     const list = Data.attacks(c.uc);
     const a = c.a;
     return note("Separate script.", "The baseline is not part of the artifact generator. pipeline_automation/run_baseline_test.py runs each artifact against the target model with no guardrails and records baseline_outcome.") +
-      metrics([metric(o.attack_succeeded || 0, "attack_succeeded", true), metric(o.attack_not_demonstrated || 0, "attack_not_demonstrated"), metric(list.length, "artifacts run")]) +
+      metrics([metric(o.attack_succeeded || 0, "attack_succeeded", true), metric(o.attack_not_demonstrated || 0, "attack_not_demonstrated")].concat(o.inconclusive ? [metric(o.inconclusive, "inconclusive")] : [], [metric(Object.values(o).reduce((x, y) => x + y, 0) || list.length, "artifacts run")])) +
+      `<p class="muted small">${esc(list.length)} sent to the recommender: ${esc(baselineCounts(list))}. Attacks the model resisted are not sent.</p>` +
       `<p class="muted small">Target: ${esc(b.target || "n/a")}.</p>` +
       (a ? attackPicker(c, state.done >= 4) + `<div class="kvs">${kv("Baseline (no rails)", chip(a.baseline_outcome || "unknown", a.baseline_outcome === "attack_succeeded" ? "bad" : ""))}</div>` : "") +
       `<div class="tablewrap"><table class="t"><thead><tr><th>Attack</th><th>Pattern</th><th>Baseline outcome</th></tr></thead><tbody>${list.map((x, i) => `<tr class="click ${i === state.attack ? "sel" : ""}" data-act="attack" data-i="${i}" tabindex="0"><td class="mono">${esc(shortId(x))}</td><td>${esc(clip(x.attack_pattern_name, 60))}</td><td>${chip(x.baseline_outcome || "unknown", x.baseline_outcome === "attack_succeeded" ? "bad" : "")}</td></tr>`).join("")}</tbody></table></div>`;
@@ -301,10 +305,35 @@
     }).join("")}</div>`).join("");
     h += `<div class="pair"><div><strong>${rails.length}</strong><span>rails in pool</span></div><span class="arrow" aria-hidden="true">→</span><div><strong>${(a.candidates || []).length}</strong><span>candidates</span></div></div>`;
     h += `<div class="chiprow">${(a.candidates || []).map((k) => chip(Data.railName(k.rail_id), rec.has(k.rail_id) ? "ess" : "")).join("") || '<span class="muted">No candidates.</span>'}</div>`;
-    h += note("About the pool.", "64 catalog rails plus the built-in self_check_input_policy rail. Highlighted chips are in a recommended option.");
+    h += note("About the pool.", catalogCount() + " rails in the catalog, including the built-in self_check_input_policy rail. Highlighted chips are in a recommended option.");
     h += det("grid", "All " + rails.length + " rails (candidates highlighted)", grid + '<p class="legend"><i class="dot cand"></i>candidate <i class="dot rec"></i>recommended</p>');
     return h;
   }
+  const OUTCOME = {
+    blocked_input: ["ok", "Blocked at input"],
+    blocked_output: ["ok", "Blocked at output"],
+    attack_success: ["bad", "Attack succeeded"],
+    error: ["na", "Error (excluded)"],
+  };
+  /* input / output / outcome pills for one attack x option test */
+  function stagePills(t) {
+    const inBlocked = t.input_status === "blocked";
+    const inPill = inBlocked
+      ? `<span class="pill ok">Input: blocked by ${esc(Data.railName(t.input_blocking_rail))}</span>`
+      : `<span class="pill ${t.input_status === "passed" ? "bad" : "na"}">Input: ${esc(t.input_status || "n/a")}</span>`;
+    const outPill = inBlocked
+      ? '<span class="pill na">Output: not reached</span>'
+      : t.output_status === "blocked"
+        ? `<span class="pill ok">Output: blocked by ${esc(Data.railName(t.output_blocking_rail))}</span>`
+        : `<span class="pill ${t.output_status === "passed" ? "bad" : "na"}">Output: ${esc(t.output_status || "n/a")}</span>`;
+    const [cls, label] = OUTCOME[t.outcome] || ["na", t.outcome || "n/a"];
+    return { inPill, outPill, outcomePill: `<span class="pill ${cls}">${esc(label)}</span>` };
+  }
+  function stageBadges(t) {
+    const p = stagePills(t);
+    return `<div class="chiprow stage-badges">${p.inPill}${p.outPill}${p.outcomePill}</div>`;
+  }
+
   function selectHTML(c) {
     const a = c.a;
     if (!a) return "";
@@ -316,9 +345,10 @@
     h += opts.map((o) => {
       const nc = o.nemo_config || {};
       const yaml = (nc.config_yml ? "# config.yml\n" + nc.config_yml + "\n" : "") + (nc.rails_co ? "# rails.co\n" + nc.rails_co : "");
-      return `<div class="row-card static"><div class="opt-head"><span class="rc-title">Option ${esc(o.rank)} · ${esc(o.config_name || "")}</span><span class="rc-meta">${chip("cost tier " + (o.cost_tier == null ? "?" : o.cost_tier))}${chip(o.evidence || "", "")}</span></div><div class="chiprow">${(o.rails || []).map((r) => chip(Data.railName(r), "ess")).join("")}${(o.covers_signals || []).map((s) => chip(s)).join("")}</div><p class="muted small">${esc(o.rationale)}</p>${det("nemo" + o.rank, "NeMo config", yaml ? `<pre class="code">${esc(yaml)}</pre>` : '<p class="muted">No NeMo config recorded.</p>')}</div>`;
+      const t = state.done >= 4 ? Data.optionTest(a, o.rank) : null;
+      return `<div class="row-card static"><div class="opt-head"><span class="rc-title">Option ${esc(o.rank)} · ${esc(o.config_name || "")}</span><span class="rc-meta">${chip("cost tier " + (o.cost_tier == null ? "?" : o.cost_tier))}${chip(o.evidence || "", "")}</span></div><div class="rail-groups"><div class="rail-group"><h5>Input rails</h5><div class="chiprow">${chips((o.input_rails || []).map(Data.railName), "ess")}</div></div><div class="rail-group"><h5>Output rails</h5><div class="chiprow">${chips((o.output_rails || []).map(Data.railName), "ess")}</div></div></div>${(o.covers_signals || []).length ? `<div class="chiprow"><span class="muted small">Covers signals:</span> ${chips(o.covers_signals)}</div>` : ""}${t ? stageBadges(t) : ""}<p class="muted small">${esc(o.rationale)}</p>${det("nemo" + o.rank, "NeMo config", yaml ? `<pre class="code">${esc(yaml)}</pre>` : '<p class="muted">No NeMo config recorded.</p>')}</div>`;
     }).join("");
-    return h;
+    return h + det("policy", "Self-check policy for this use case", policyHTML());
   }
   function testHTML(c) {
     const a = c.a;
@@ -329,16 +359,16 @@
     if (tests.length === 0) {
       h += `<div class="muted"><span>Not tested in this snapshot.</span></div>`;
     } else {
-      const blk = tests.find((t) => t.status === "blocked");
-      h += `<div class="verdict ${blk ? "ok" : "bad"}"><strong>${blk ? "Blocked" : "Not blocked"}</strong><span>${blk ? "by " + esc(blk.blocking_rail || (blk.rails || []).map(Data.railName).join(" + ")) : "None of the recommended configs stopped it."}</span></div>`;
-      h += `<div class="tablewrap"><table class="t"><thead><tr><th>Option</th><th>Test</th><th>Rails</th><th>Result</th><th>Latency</th></tr></thead><tbody>${tests.map((t) => `<tr><td>${esc(t.option_rank)}</td><td>${esc(t.test_label)}</td><td>${esc((t.rails || []).map(Data.railName).join(" + "))}</td><td><span class="pill ${t.status === "blocked" ? "ok" : "bad"}">${t.status === "blocked" ? "Blocked" : "Not blocked"}</span></td><td class="mono">${t.latency_ms == null ? "" : Math.round(t.latency_ms) + " ms"}</td></tr>`).join("")}</tbody></table></div><p class="muted small">Recorded status "modified" means the rail did not block the request, so it counts as not blocked.</p>`;
-    }
-    const pr = Data.perRail(c.uc);
-    if (pr.length > 0) {
-      const mx = Math.max(1, ...pr.map((r) => r.tested));
-      h += det("perrail", "Per-rail summary (this use case)", `<div class="bars gate">${pr.map((r) => `<div class="barrow"><span class="bl" title="${esc(r.id)}">${esc(Data.railName(r.id))}</span><span class="bt"><i class="gen" style="width:${Math.max(3, Math.round((100 * r.tested) / mx))}%"></i>${r.blocked ? `<i class="pass" style="width:${Math.max(2, Math.round((100 * r.blocked) / mx))}%"></i>` : ""}</span><span class="bv">${r.blocked} / ${r.tested} blocked</span></div>`).join("")}</div><p class="legend"><i class="dot gen"></i>tested <i class="dot pass"></i>blocked</p>`);
+      const blk = tests.find(Data.blocked);
+      const where = blk ? (blk.outcome === "blocked_input" ? "at input by " + Data.railName(blk.input_blocking_rail) : "at output by " + Data.railName(blk.output_blocking_rail)) : "";
+      h += `<div class="verdict ${blk ? "ok" : "bad"}"><strong>${blk ? "Blocked" : "Not blocked"}</strong><span>${esc(blk ? "by option " + blk.option_rank + ", " + where : "None of the recommended configs stopped it.")}</span></div>`;
+      h += `<div class="tablewrap"><table class="t"><thead><tr><th>Option</th><th>Input rail</th><th>Output rail</th><th>Outcome</th><th>Config</th></tr></thead><tbody>${tests.map((t) => {
+        const p = stagePills(t);
+        return `<tr><td>${esc(t.option_rank)}</td><td>${p.inPill}</td><td>${p.outPill}</td><td>${p.outcomePill}</td><td class="mono">${esc(t.config_id || "")}</td></tr>`;
+      }).join("")}</tbody></table></div><p class="muted small">Output is only checked for attacks that passed the input stage. Errors are excluded from the counts.</p>`;
     }
     h += det("allatk", "All attacks", `<div class="tablewrap"><table class="t"><thead><tr><th>Attack</th><th>Threat</th><th>Pattern</th><th>Result</th></tr></thead><tbody>${Data.attacks(c.uc).map((x, i) => `<tr class="click ${i === state.attack ? "sel" : ""}" data-act="attack" data-i="${i}" tabindex="0"><td class="mono">${esc(shortId(x))}</td><td>${chip(x.threat_id)}</td><td>${esc(clip(x.attack_pattern_name, 60))}</td><td><span class="pill ${stateOf(x) === "blocked" ? "ok" : stateOf(x) === "na" ? "na" : "bad"}">${esc(stateLabel(x))}</span></td></tr>`).join("")}</tbody></table></div>`);
+    h += det("results-uc", "Results for this use case (test --summarize tables, this use case only)", resultsHTML());
     return h;
   }
 
@@ -381,9 +411,10 @@
       desc: "Tag each attack with signals, pick candidate rails, choose a minimal config and test it on NeMo.", verb: "guardrail recommender",
       subs: [
         { key: "tag", label: "Tag signals", hint: "attack → signals", msg: "tagging signals…", render: signalsHTML },
-        { key: "pool", label: "Candidate pool", hint: "65 rails → candidates", msg: "building candidate pool…", render: poolHTML },
+        { key: "pool", label: "Candidate pool", hint: catalogCount() + " rails → candidates", msg: "building candidate pool…", render: poolHTML },
         { key: "select", label: "Select minimal config", hint: "options + NeMo config", msg: "selecting minimal config…", render: selectHTML },
         { key: "test", label: "Test on NeMo /v1/checks", hint: "blocked / not blocked", msg: "testing on NeMo…", render: testHTML },
+        { key: "benign", label: "Benign requests", hint: "false positives on ordinary traffic", msg: "testing benign requests…", render: benignHTML },
       ],
       summary: (c) => `${Data.blockedCount(c.uc)}/${Data.attacks(c.uc).length} blocked`,
     },
@@ -424,6 +455,131 @@
     clearTimer();
     Object.assign(state, { done: 0, running: -1, sub: 0, sel: 0, tab: {}, attack: 0, runAll: false, paused: false, sfilter: "", sshown: 20, scn: null, risk: null });
     render();
+  }
+
+  /* ---------- results, benign and policy (shown inside the recommender tabs, selected use case only) ---------- */
+  const pct = (a, n) => (n ? Math.round((100 * a) / n) + "%" : "n/a");
+  const frac = (a, n) => `${num(a)} / ${num(n)} (${pct(a, n)})`;
+  const kindRate = (t) => (t && t.total ? `${t.blocked}/${t.total}` : "n/a");
+  const benignLine = (t) => (t ? `${t.blocked} / ${t.total} blocked (plain ${kindRate((t.kinds || {}).plain)}, borderline ${kindRate((t.kinds || {}).borderline)})${t.errors ? ", " + t.errors + " errors (excluded)" : ""}` : "not in this snapshot");
+
+  function resultsHTML() {
+    const uc = curUC();
+    const r = uc && uc.results;
+    if (!r) return '<p class="muted">No results for this use case in this snapshot.</p>';
+    const ranks = Object.keys(r.options || {}).sort((x, y) => x - y);
+    const sum = (k) => ranks.reduce((n, rk) => n + (r.options[rk][k] || 0), 0);
+    const perRank = ranks.map((rk) => `option ${rk} on ${num(r.options[rk].tested)}`).join(", ");
+    let h = metrics([
+      metric(num(Data.attacks(uc).length), "attacks sent to the recommender"),
+      metric(num(sum("tested")), "tests (" + perRank + ")"),
+      metric(num(sum("blocked_input") + sum("blocked_output")), "blocked at input or output", true),
+      metric(num(sum("attack_succeeded")), "attack successes"),
+    ]);
+    h += '<p class="muted small">Each attack is tested with every option it was given; only some attacks get a second option. Attacks with no option (gaps) are not tested.</p>';
+    h += '<p class="muted small">Errors are excluded from every denominator. An attack that is blocked at input is never counted again at output.</p>';
+    h += '<h4 class="sub">Per option rank</h4>';
+    h += `<div class="tablewrap"><table class="t"><thead><tr><th>Option rank</th><th>Tested</th><th>Blocked at input</th><th>Blocked at output (of those passing input)</th><th>Attack success</th><th>Errors</th></tr></thead><tbody>${ranks.map((rk) => {
+      const o = r.options[rk];
+      return `<tr><td>${esc(rk)}</td><td>${num(o.tested)}</td><td>${frac(o.blocked_input, o.tested)}</td><td>${frac(o.blocked_output, o.output_checked)}</td><td>${frac(o.attack_succeeded, o.tested)}</td><td>${num(o.errors)}</td></tr>`;
+    }).join("")}</tbody></table></div>`;
+    h += stageRailTable(uc, r, "input");
+    h += stageRailTable(uc, r, "output");
+    h += '<p class="muted small">Each check credits one blocking rail. A rail with 0 blocks may still have fired on an attack that another rail in the same config was credited for. Benign blocked counts are from the Benign requests tab.</p>';
+    return h;
+  }
+
+  /* NeMo credits some blocks to a shared flow rather than a catalog rail: every pii-* rail in a config runs inside one Presidio flow. */
+  const FLOW_LABEL = {
+    sensitive_data_detection: "Presidio PII flow (any pii-* rail in the config)",
+    regex_detection: "Regex flow (any regex-* rail in the config)",
+  };
+
+  /* One row per rail recommended at this stage for this use case, including rails that never blocked.
+     Ran on = tests (attack × option) whose config had the rail; at output only tests that passed input count. */
+  function stageRailTable(uc, r, stage) {
+    const listKey = stage + "_rails";
+    const ran = {};
+    Data.attacks(uc).forEach((a) => (a.tests || []).forEach((t) => {
+      if (t.outcome === "error" || (stage === "output" && t.outcome === "blocked_input")) return;
+      const o = Data.options(a).find((x) => x.rank === t.option_rank);
+      ((o && o[listKey]) || []).forEach((id) => { ran[id] = (ran[id] || 0) + 1; });
+    }));
+    const c = (id, k) => ((r.rails || {})[id] || {})[k] || 0;
+    const ak = "attack_" + stage, bk = "benign_" + stage;
+    Object.keys(r.rails || {}).forEach((id) => { if (!(id in ran) && (c(id, ak) || c(id, bk))) ran[id] = 0; });
+    const rows = Object.keys(ran).sort((x, y) => c(y, ak) - c(x, ak) || ran[y] - ran[x] || (x < y ? -1 : 1));
+    const title = stage === "input" ? "Input rails" : "Output rails";
+    if (!rows.length) return `<h4 class="sub">${title}</h4><p class="muted small">No ${stage} rails recommended for this use case.</p>`;
+    const ranHead = stage === "input" ? "Ran on (tests)" : "Ran on (tests that passed input)";
+    return `<h4 class="sub">${title}</h4><div class="tablewrap"><table class="t"><thead><tr><th>Rail</th><th>${ranHead}</th><th>Blocked</th><th>Benign blocked</th></tr></thead><tbody>${rows.map((id) => {
+      const name = FLOW_LABEL[id] || Data.railName(id);
+      return `<tr><td>${esc(name)}${name !== id ? ` <span class="mono muted small">${esc(id)}</span>` : ""}</td><td>${FLOW_LABEL[id] ? "shared flow" : num(ran[id])}</td><td>${num(c(id, ak))}</td><td>${num(c(id, bk))}</td></tr>`;
+    }).join("")}</tbody></table></div>`;
+  }
+
+  /* Per-rail table over the given count columns; rails with all zeros in those columns are skipped. */
+  function railTable(r, keys, heads) {
+    const tot = (c) => keys.reduce((n, k) => n + (c[k] || 0), 0);
+    const rows = Object.entries(r.rails || {}).filter(([, c]) => tot(c) > 0).sort((x, y) => tot(y[1]) - tot(x[1]) || (x[0] < y[0] ? -1 : 1));
+    if (!rows.length) return '<p class="muted small">No rail fired.</p>';
+    return `<div class="tablewrap"><table class="t"><thead><tr><th>Rail</th>${heads.map((x) => `<th>${esc(x)}</th>`).join("")}</tr></thead><tbody>${rows.map(([id, c]) => `<tr><td>${esc(Data.railName(id))}${Data.railName(id) !== id ? ` <span class="mono muted small">${esc(id)}</span>` : ""}</td>${keys.map((k) => `<td>${num(c[k])}</td>`).join("")}</tr>`).join("")}</tbody></table></div>`;
+  }
+
+  function benignTotalsHTML() {
+    const uc = curUC();
+    const r = uc && uc.results;
+    if (!r) return '<p class="muted">No results for this use case in this snapshot.</p>';
+    return `<div class="kvs">${kv("Benign input", esc(benignLine(r.benign && r.benign.input)))}${kv("Benign output", esc(benignLine(r.benign && r.benign.output)))}</div>` +
+      '<p class="muted small">Counted per config call: each request is sent to every config of its use case. Errors are excluded.</p>' +
+      '<h4 class="sub">Rails that blocked benign traffic</h4>' +
+      railTable(r, ["benign_input", "benign_output"], ["Benign blocks at input", "Benign blocks at output"]);
+  }
+
+  function benignHTML() {
+    const uc = curUC();
+    const list = (uc && uc.benign) || [];
+    if (!list.length) return '<p class="muted">No benign requests for this use case.</p>';
+    const hit = (req, stage) => req.blocks.some((b) => b.stage === stage);
+    const summary = ["plain", "borderline"].map((k) => {
+      const rs = list.filter((r) => r.kind === k);
+      return `${k}: ${rs.filter((r) => hit(r, "input")).length} of ${rs.length} blocked at input, ${rs.filter((r) => hit(r, "output")).length} at output`;
+    }).join(" · ");
+    const shown = list.slice(0, state.bshown);
+    let h = '<p class="muted small">Ordinary requests written from the use case description only (never from attacks, policies or rails), sent through the same recommended configs: the request on input, the model reply on output.</p>';
+    h += `<p class="small">${esc(summary)}</p>`;
+    h += '<p class="muted small">A request counts once per stage when any config blocked it. Counts here are per request; the totals below count per config call.</p>';
+    h += det("benign-uc", "Benign totals for this use case", benignTotalsHTML());
+    const r = uc.results;
+    const calls = (s) => (r && r.benign && r.benign[s] ? r.benign[s].total : null);
+    const nIn = calls("input"), nOut = calls("output");
+    const blocked = list.filter((x) => x.blocks.length).length;
+    const nBlocks = list.reduce((n, x) => n + x.blocks.length, 0);
+    if (nIn != null && nOut != null) h += `<p class="small">${num(list.length)} requests × ${num(nIn / list.length)} input configs = ${num(nIn)} input calls; × ${num(nOut / list.length)} output configs = ${num(nOut)} output calls. ${num(blocked)} request${blocked === 1 ? "" : "s"} caused all ${num(nBlocks)} blocked calls.</p>`;
+    /* one pill per stage + rail, with how many of the stage's configs blocked it; config ids on hover */
+    const pills = (req) => {
+      const g = {};
+      req.blocks.forEach((b) => { const k = b.stage + "|" + b.blocking_rail; (g[k] = g[k] || []).push(b.config_id || ""); });
+      return Object.entries(g).map(([k, ids]) => {
+        const [stage, rail] = k.split("|");
+        const of = stage === "input" ? nIn : nOut;
+        const total = of != null ? " of " + num(of / list.length) : "";
+        return `<div><span class="pill bad" title="${esc(ids.join(", "))}">${esc(stage)}: ${esc(FLOW_LABEL[rail] || Data.railName(rail))} — ${num(ids.length)}${total} configs</span></div>`;
+      }).join("");
+    };
+    h += `<div class="tablewrap"><table class="t"><thead><tr><th>Kind</th><th>Request</th><th>Blocked by</th><th>Reply</th></tr></thead><tbody>${shown.map((req) => `<tr><td>${chip(req.kind || "")}</td><td><div>${esc(req.text)}</div><small class="muted">${esc(req.why_legitimate || "")}</small></td><td>${req.blocks.length ? pills(req) : '<span class="pill ok">passed</span>'}</td><td>${det("reply-" + req.id, "Show reply", `<pre class="code">${esc(req.reply_rendered || "(no reply recorded)")}</pre>`)}</td></tr>`).join("")}</tbody></table></div>`;
+    if (list.length > shown.length) h += `<p><button type="button" class="secondary" data-act="bmore">Show more (${list.length - shown.length} left)</button></p>`;
+    return h;
+  }
+
+  function policyHTML() {
+    const uc = curUC();
+    const p = uc && uc.self_check_policy;
+    if (!p) return '<p class="muted">No self-check policy in this snapshot for this use case.</p>';
+    const list = (xs) => `<ul>${(xs || []).map((x) => `<li>${esc(x)}</li>`).join("")}</ul>`;
+    return '<p class="muted small">Generated by the guard model from the use case description, tools and risks — never from attacks.</p>' +
+      `<div class="kvs">${kv("Assistant", esc(p.assistant || "n/a"))}${kv("Guard model", esc(p.model || "n/a"))}${kv("Source", esc(p.source || "n/a"))}</div>` +
+      `<div class="rubrics"><div><h3>Input policy</h3>${list(p.input)}</div><div><h3>Output policy</h3>${list(p.output)}</div></div>`;
   }
 
   /* ---------- DOM ---------- */
@@ -530,6 +686,7 @@
       else if (act === "attack") { state.attack = i; render(); }
       else if (act === "sfilter") { state.sfilter = state.sfilter === t.dataset.v ? "" : t.dataset.v; state.sshown = 20; render(); }
       else if (act === "more") { state.sshown += 40; render(); }
+      else if (act === "bmore") { state.bshown += 50; render(); }
       else if (act === "risk") { state.risk = state.risk === t.dataset.id ? null : t.dataset.id; render(); }
       else if (act === "scn") { state.scn = state.scn === t.dataset.id ? null : t.dataset.id; render(); }
     });

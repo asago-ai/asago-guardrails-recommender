@@ -12,9 +12,12 @@ from typing import Dict, List, Optional
 import yaml
 
 from .attacks import ARTIFACT_DIRS, SCENARIO_DIRS
+from .test_rails import _is_attack_error, rail_for_flow, run_tables
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 DEMO_DIR = REPO_ROOT / "demo"
+BENIGN_DIR = REPO_ROOT / "examples/benign_requests"
+BENIGN_STAGE_FILES = (("input", "benign_results.json"), ("output", "benign_output_results.json"))
 
 
 def truncate_text(text: str, max_chars: int = 300) -> str:
@@ -178,6 +181,14 @@ def load_policy(
     }
 
 
+def _rel(path: Path, root: Path) -> str:
+    """Path relative to the pipeline results dir, so the snapshot never records local absolute paths."""
+    try:
+        return path.relative_to(root).as_posix()
+    except ValueError:
+        return path.name
+
+
 def final_run_dir(uc_id: str, pipeline_results: Path) -> Optional[Path]:
     """The scenario-generator run that produced admitted scenarios (has finalization-inventory.json)."""
     for scenario_dir_name in SCENARIO_DIRS:
@@ -222,7 +233,7 @@ def load_battery(uc_id: str, pipeline_results: Path) -> Dict:
                 }
             )
         return {
-            "source_file": str(f),
+            "source_file": _rel(f, pipeline_results),
             "derived": False,
             "risk_cards": len(entries),
             "governance_only": len(data.get("governance_only", [])),
@@ -333,13 +344,116 @@ def load_recommendations(run_dir: Path) -> Dict[str, Dict]:
     return {rec["attack_id"]: rec for rec in recs_list}
 
 
-def load_test_results(run_dir: Path) -> List[Dict]:
-    """Load test results."""
-    test_results_file = run_dir / "test_results.json"
-    if not test_results_file.exists():
+def _load_json_list(path: Path) -> List[Dict]:
+    """Load a JSON list, or an empty list when the file is absent."""
+    if not path.exists():
         return []
-    with open(test_results_file) as f:
+    with open(path) as f:
         return json.load(f)
+
+
+def load_output_test_results(run_dir: Path) -> List[Dict]:
+    """Load output_test_results.json (one record per attack x option)."""
+    return _load_json_list(run_dir / "output_test_results.json")
+
+
+def build_test_record(t: Dict) -> Dict:
+    """Snapshot form of one attack x option test: input and output stage, plus the final outcome.
+
+    Outcome is one of blocked_input, blocked_output, attack_success, error. Error uses the same rule as
+    run_tables(), so the per-attack view and the totals agree.
+    """
+    if _is_attack_error(t):
+        outcome = "error"
+    elif t.get("outcome") == "attack_succeeded":
+        outcome = "attack_success"
+    else:
+        outcome = t.get("outcome")
+    return {
+        "option_rank": t.get("option_rank"),
+        "config_id": t.get("config_id"),
+        "input_status": t.get("input_status"),
+        "input_blocking_rail": rail_for_flow(t.get("input_blocking_rail")),
+        "output_status": t.get("output_status"),
+        "output_blocking_rail": rail_for_flow(t.get("output_blocking_rail")),
+        "outcome": outcome,
+    }
+
+
+def load_benign_requests(benign_dir: Path, use_case_ids: List[str]) -> Dict[str, List[Dict]]:
+    """Benign request texts and rationale per use case, from <benign_dir>/<uc>.yaml (empty when absent)."""
+    out: Dict[str, List[Dict]] = {}
+    for uc_id in use_case_ids:
+        path = benign_dir / f"{uc_id}.yaml"
+        if not path.exists():
+            out[uc_id] = []
+            continue
+        data = yaml.safe_load(path.read_text()) or {}
+        out[uc_id] = [
+            {
+                "id": r.get("id"),
+                "kind": r.get("kind"),
+                "text": r.get("text", ""),
+                "why_legitimate": r.get("why_legitimate", ""),
+            }
+            for r in data.get("requests", [])
+        ]
+    return out
+
+
+def load_benign_replies(benign_dir: Path) -> Dict[str, str]:
+    """Rendered benign replies keyed by request id (benign_replies.json)."""
+    path = benign_dir / "benign_replies.json"
+    if not path.exists():
+        return {}
+    with open(path) as f:
+        data = json.load(f)
+    return {rid: (rec or {}).get("rendered") for rid, rec in data.items()}
+
+
+def build_benign_blocks(uc_id: str, run_dir: Path) -> Dict[str, List[Dict]]:
+    """Blocked benign calls per request id: {config_id, stage, blocking_rail}, from both benign result files."""
+    blocks: Dict[str, List[Dict]] = {}
+    for stage, filename in BENIGN_STAGE_FILES:
+        for r in _load_json_list(run_dir / filename):
+            if r.get("use_case") != uc_id or not r.get("blocked"):
+                continue
+            blocks.setdefault(r["request_id"], []).append(
+                {
+                    "config_id": r.get("config_id"),
+                    "stage": stage,
+                    "blocking_rail": rail_for_flow(r.get("blocking_rail")),
+                }
+            )
+    return blocks
+
+
+def build_benign(uc_id: str, run_dir: Path, requests: List[Dict], replies: Dict[str, str]) -> List[Dict]:
+    """Per use case: each benign request with its rendered reply and the calls that blocked it."""
+    blocks = build_benign_blocks(uc_id, run_dir)
+    return [
+        {
+            **req,
+            "reply_rendered": truncate_text(replies.get(req["id"]) or "", 400),
+            "blocks": blocks.get(req["id"], []),
+        }
+        for req in requests
+    ]
+
+
+def load_self_check_policy(run_dir: Path, uc_id: str) -> Optional[Dict]:
+    """Self-check policy the guard model wrote for this use case (run dir self_check_policies/<uc>.yaml)."""
+    path = run_dir / "self_check_policies" / f"{uc_id}.yaml"
+    if not path.exists():
+        return None
+    data = yaml.safe_load(path.read_text()) or {}
+    return {
+        "assistant": data.get("assistant", ""),
+        "input": data.get("input") or [],
+        "output": data.get("output") or [],
+        "model": data.get("model"),
+        "source": data.get("source"),
+    }
 
 
 def redact_api_keys(text: str) -> str:
@@ -362,6 +476,8 @@ def scrub_environment(snapshot: Dict) -> Dict:
     """Remove cluster hostnames and local filesystem paths from the snapshot."""
     text = json.dumps(snapshot)
     text = re.sub(r'https?://[^\s"\']*openshiftapps\.com', "https://<redacted-host>", text)
+    text = re.sub(r'https?://[^\s"\'/]*(?:\.svc\.cluster\.local|\.apps\.)[^\s"\']*', "https://<redacted-host>", text)
+    text = re.sub(r"[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*\.svc\.cluster\.local(?::\d+)?", "<redacted-host>", text)
     text = re.sub(r'(?:/Users|/home)/[^"\s]*?/(?=pipeline_results/|output/)', "", text)
     text = re.sub(r'(?:/Users|/home)/[^/"\s]+', "~", text)
     return json.loads(text)
@@ -565,7 +681,7 @@ def load_scenario_funnel(uc_id: str, pipeline_results: Path) -> Dict:
     skipped_seeds = re.findall(r"Seed (AP-[A-Z0-9-]+) has no technique IDs", log)
 
     return {
-        "run_dir": str(run),
+        "run_dir": _rel(run, pipeline_results),
         "enumerated": len(decisions),
         "admitted": admitted,
         "quarantined": len(decisions) - admitted,
@@ -582,6 +698,19 @@ def load_scenario_funnel(uc_id: str, pipeline_results: Path) -> Dict:
         "seeds_without_techniques": skipped_seeds,
         "uncovered_attack_patterns": gaps.get("uncovered_attack_patterns", []),
     }
+
+
+def load_baseline_outcome_counts(pipeline_results: Path) -> Dict[str, Dict[str, int]]:
+    """Outcome counts per use case over every artifact in baseline_summary.json."""
+    path = pipeline_results / "baseline_summary.json"
+    if not path.exists():
+        return {}
+    counts: Dict[str, Dict[str, int]] = {}
+    for rec in json.load(open(path)).get("artifacts", []):
+        uc = counts.setdefault(rec.get("use_case") or "unknown", {})
+        o = rec.get("outcome") or "unknown"
+        uc[o] = uc.get(o, 0) + 1
+    return counts
 
 
 def load_artifact_funnel(uc_id: str, pipeline_results: Path, scenarios: Dict) -> Dict:
@@ -621,7 +750,9 @@ def load_artifact_funnel(uc_id: str, pipeline_results: Path, scenarios: Dict) ->
         sid = m["scenario_id"]
         vf = artifacts_path / sid / "validation.json"
         val = json.load(open(vf)) if vf.exists() else {}
-        art = Path(m.get("artifact_path", ""))
+        # artifact_path is relative to the pipeline results dir; never resolve it against the cwd
+        rel = m.get("artifact_path")
+        art = (pipeline_results / rel) if rel else None
         per[sid] = {
             "ok": bool(m.get("ok")),
             "coverage_gate": m.get("gate_result"),
@@ -630,7 +761,7 @@ def load_artifact_funnel(uc_id: str, pipeline_results: Path, scenarios: Dict) ->
             "fidelity_total": val.get("fidelity_total"),
             "scores": val.get("scores"),
             "attempts": val.get("attempts"),
-            "produced": art.exists(),
+            "produced": bool(art and art.is_file()),
         }
         if val.get("fidelity_total") is not None:
             scores_total.append(val["fidelity_total"])
@@ -673,30 +804,33 @@ def _build_provenance(
     blocked_n: int,
     options_n: int,
     policy_doc: str = "",
+    baseline_outcomes: Optional[Dict[str, int]] = None,
 ) -> Dict:
-    """Provenance per pipeline stage, built from run artifacts."""
+    """Provenance per pipeline stage, built from run artifacts.
+
+    baseline_outcomes: outcome counts over every artifact the baseline ran (from
+    baseline_summary.json). Falls back to the recommended attacks when absent.
+    """
     ps = (policy or {}).get("stats", {})
-    outcomes = {}
+    rec_outcomes: Dict[str, int] = {}
     for a in attacks:
         o = a.get("baseline_outcome") or "unknown"
-        outcomes[o] = outcomes.get(o, 0) + 1
+        rec_outcomes[o] = rec_outcomes.get(o, 0) + 1
+    outcomes = baseline_outcomes or rec_outcomes
 
     admitted_n = sf.get("admitted", len(scenarios))
-    threat_ids = {a.get("threat_id") for a in attacks} if attacks else set()
-    filtered = {sid: s for sid, s in scenarios.items() if s.get("threat_id") in threat_ids} if threat_ids else scenarios
-    selected_n = len(filtered)
+    selected_n = len(attacks)
     attempted = af.get("attempted", 0)
-    no_record = max(0, selected_n - attempted)
+    no_record = max(0, admitted_n - attempted)
 
-    threat_types = ", ".join(sorted(t for t in threat_ids if t)) or "none"
+    rec_mix = ", ".join(f"{v} {k.replace('_', ' ')}" for k, v in sorted(rec_outcomes.items()))
     rule = (
         f"All {admitted_n} admitted scenarios passed the scenario "
-        f"generator's admission gates. {selected_n} of them belong to the "
-        f"threat types that were turned into attacks ({threat_types}), and "
-        f"{attempted} produced an artifact."
+        f"generator's admission gates, and {af.get('produced', 0)} produced an artifact. "
+        f"{selected_n} of these attacks went to the recommender (baseline: {rec_mix or 'none'})."
     )
     if no_record > 0:
-        rule += f" {no_record} selected scenarios lack artifact records."
+        rule += f" {no_record} admitted scenarios lack artifact records."
 
     return {
         "stages": {
@@ -802,6 +936,7 @@ def build_snapshot(
     policy_paths: Dict[str, Path],
     policy_names: Dict[str, str],
     policy_docs: Dict[str, str],
+    benign_dir: Path = BENIGN_DIR,
 ) -> Dict:
     """Build the complete snapshot."""
     print("Discovering use cases...", file=sys.stderr)
@@ -823,7 +958,9 @@ def build_snapshot(
     signals_data = load_signals(run_dir)
     candidates_data = load_candidates(run_dir)
     recommendations_data = load_recommendations(run_dir)
-    test_results = load_test_results(run_dir)
+    test_records = load_output_test_results(run_dir)
+    benign_requests = load_benign_requests(benign_dir, use_case_ids)
+    benign_replies = load_benign_replies(benign_dir)
 
     print("Loading rail catalog...", file=sys.stderr)
     rails = load_rail_catalog(catalog_dir)
@@ -882,10 +1019,13 @@ def build_snapshot(
                         config_dir = str(run_dir / config_dir)
                     nemo_config = load_nemo_config(config_dir)
 
+                    input_rails = opt.get("rails", [])
                     opt_copy = {
                         "rank": opt.get("rank"),
-                        "rails": opt.get("rails", []),
-                        "config_name": ",".join([compute_config_name(r) for r in opt.get("rails", [])]),
+                        "config_id": opt.get("config_id"),
+                        "input_rails": input_rails,
+                        "output_rails": opt.get("output_rails") or [],
+                        "config_name": ",".join([compute_config_name(r) for r in input_rails]),
                         "evidence": truncate_text(opt.get("evidence", ""), 300),
                         "cost_tier": opt.get("cost_tier"),
                         "covers_signals": opt.get("covers_signals", []),
@@ -907,12 +1047,10 @@ def build_snapshot(
 
             artifact_path = attack.get("artifact_path", "")
             detector_rubric = load_detector_rubric(artifact_path)
-            tests = [t for t in test_results if t["attack_id"] == attack_id]
+            tests = [build_test_record(t) for t in test_records if t["attack_id"] == attack_id]
 
-            for test in tests:
-                if test.get("status") == "blocked":
-                    blocked_counts[uc_id] += 1
-                    break
+            if any(t["outcome"] in ("blocked_input", "blocked_output") for t in tests):
+                blocked_counts[uc_id] += 1
 
             art_turns, art_idx = artifact_turns(artifact_path)
             attack_output = {
@@ -932,17 +1070,7 @@ def build_snapshot(
                 "signals": signals,
                 "candidates": candidates,
                 "recommendation": rec_output,
-                "tests": [
-                    {
-                        "option_rank": t.get("option_rank"),
-                        "test_label": t.get("test_label"),
-                        "rails": t.get("rails", []),
-                        "status": t.get("status"),
-                        "blocking_rail": t.get("blocking_rail"),
-                        "latency_ms": t.get("latency_ms"),
-                    }
-                    for t in tests
-                ],
+                "tests": tests,
             }
 
             if detector_rubric:
@@ -956,6 +1084,7 @@ def build_snapshot(
         }
 
         sf = load_scenario_funnel(uc_id, pipeline_results)
+        all_baseline_outcomes = load_baseline_outcome_counts(pipeline_results)
         provenance = _build_provenance(
             uc_id,
             battery,
@@ -968,6 +1097,7 @@ def build_snapshot(
             blocked_n=blocked_counts.get(uc_id, 0),
             options_n=sum(len((a["recommendation"] or {}).get("options", [])) for a in uc_attacks_output),
             policy_doc=policy_docs.get(uc_id, ""),
+            baseline_outcomes=all_baseline_outcomes.get(uc_id),
         )
 
         use_cases_output.append(
@@ -976,9 +1106,12 @@ def build_snapshot(
                 "title": title_map.get(uc_id, derive_use_case_title(uc_id)),
                 "description": truncate_text(uc_data.get("description", ""), 800),
                 "policy": policy,
+                "self_check_policy": load_self_check_policy(run_dir, uc_id),
                 "battery": battery,
                 "scenarios": scenario_list,
                 "attacks": uc_attacks_output,
+                "benign": build_benign(uc_id, run_dir, benign_requests.get(uc_id, []), benign_replies),
+                "results": run_tables(run_dir, use_case=uc_id),
                 "provenance": provenance,
             }
         )
@@ -999,14 +1132,15 @@ def build_snapshot(
             }
             for uc_id in use_case_ids
         },
-        "test_results_total": len(test_results),
+        "test_results_total": len(test_records),
     }
 
     snapshot = {
         "generated_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
-        "run_id": "run1",
+        "run_id": run_dir.name,
         "catalog": {
             "rails": list(rails.values()),
+            "count": len(rails),
         },
         "use_cases": use_cases_output,
         "summary": summary,
@@ -1064,6 +1198,12 @@ Examples:
         ),
     )
     parser.add_argument(
+        "--benign-dir",
+        type=Path,
+        default=BENIGN_DIR,
+        help="Benign requests and replies (<uc>.yaml, benign_replies.json) (default: examples/benign_requests)",
+    )
+    parser.add_argument(
         "--out",
         type=Path,
         default=DEMO_DIR / "data",
@@ -1096,6 +1236,7 @@ Examples:
             policy_paths,
             policy_names,
             policy_docs,
+            args.benign_dir,
         )
 
         snapshot = scrub_environment(snapshot)

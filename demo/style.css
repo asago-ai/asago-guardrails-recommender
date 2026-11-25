@@ -573,6 +573,7 @@ blockquote { margin: 8px 0; padding: 8px 14px; border-left: 3px solid var(--asag
 .dot.pass, .dot.rec, .dot.blocked { background: var(--asago-secondary); }
 .dot.open { background: #ed865e; }
 .dot.na { background: var(--asago-muted); }
+.dot.untested { background: #b8bbbe; }
 .filter-row { margin: 18px 0 12px; flex-wrap: wrap; }
 .filter-row select { flex: 0 1 380px; max-width: 100%; background: var(--asago-card); color: inherit; }
 .tablewrap { overflow-x: auto; border: 1px solid var(--asago-border); border-radius: 4px; }
@@ -598,6 +599,7 @@ blockquote { margin: 8px 0; padding: 8px 14px; border-left: 3px solid var(--asag
 .pick i { width: 8px; height: 8px; border-radius: 50%; background: var(--asago-muted); }
 .pick.blocked i { background: var(--asago-secondary); }
 .pick.open i { background: #ed865e; }
+.pick.untested i { background: #b8bbbe; }
 .pick.plain i { display: none; }
 .pick.on { border-color: var(--asago-primary); background: var(--asago-selection); }
 .picker-legend { margin-left: 10px; font-size: 11px; color: var(--asago-muted); }
@@ -652,3 +654,10 @@ pre.code { border: 1px solid var(--asago-border); border-radius: 3px; }
 .chain .chain-step { margin-bottom: 0; }
 .chain-step b { font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--asago-muted); font-weight: 600; }
 .chain-step span { color: var(--asago-text); line-height: 1.45; }
+
+/* Option card: input / output rail groups and per-option result badges */
+.rail-groups { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 8px 18px; margin: 8px 0 4px; }
+.rail-group h5 { margin: 0 0 2px; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; color: var(--asago-muted); }
+.rail-group .chiprow { margin: 4px 0 6px; }
+.stage-badges { gap: 6px; align-items: center; }
+.stage-badges .pill { margin: 2px 4px 2px 0; }
