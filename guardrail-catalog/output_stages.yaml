@@ -1,0 +1,28 @@
+# Output stages: how each detector family runs on the bot reply.
+#
+# Upstream rail cards are input-only and stay unmodified (see README.md). This file declares, per detector
+# family, the output flow and the config transform the recommender applies when a card is reused on the
+# bot reply. catalog.py reads it at load time and sets each card's output_flow and placement.
+#
+# config transforms (applied to a copy of the card's rails.config):
+#   as_is                     keep the detector config unchanged
+#   input_to_output           rename the detector's `input` key to `output` (the whole dict moves)
+#   input_entities_to_output  sensitive_data_detection: output = {entities: input.entities}; recognizers stay
+#
+# flow: `{classifier}` is replaced with the classifier name of the card.
+
+sensitive_data_detection:
+  config: input_entities_to_output
+  flow: detect sensitive data on output
+
+injection_detection:
+  config: as_is
+  flow: injection detection
+
+hf_classifier:
+  config: as_is
+  flow: "hf classifier check windowed output $classifier={classifier}"
+
+regex_detection:
+  config: input_to_output
+  flow: regex check output

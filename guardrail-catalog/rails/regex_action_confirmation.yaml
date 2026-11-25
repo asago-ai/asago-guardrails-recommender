@@ -1,0 +1,12 @@
+passthrough: true
+rails:
+  config:
+    regex_detection:
+      output:
+        case_insensitive: true
+        patterns:
+        - '\b(i have|i''ve|i)\s+(now\s+|successfully\s+|just\s+)?(submitted|approved|processed|transferred|escalated|updated|changed|initiated|executed|authori[sz]ed|refunded|released|waived)\b'
+        - '\b(your|the)\s+(claim|transfer|payment|request|record|refund|order|prescription|authori[sz]ation|limit|account)\s+(has been|was|is now|have been)\s+(submitted|approved|processed|completed|updated|initiated|executed|authori[sz]ed|released|waived|changed)\b'
+  output:
+    flows:
+    - regex check output

@@ -1,0 +1,13 @@
+passthrough: true
+rails:
+  config:
+    regex_detection:
+      input:
+        case_insensitive: true
+        patterns:
+        - '\b(skip|bypass|waive|override|ignore|circumvent|get around)\b.{0,40}\b(verification|verify|approval|authori[sz]ation|identity check|security check|kyc|policy|procedure|protocol)\b'
+        - '\b(urgent(ly)?|emergency|immediately|right now|asap|no time)\b.{0,60}\b(skip|bypass|waive|override|without)\b.{0,30}\b(verification|approval|authori[sz]ation|check|review)\b'
+        - '\b(i am|i''m|this is)\s+(the |a |your )?(ceo|cfo|director|supervisor|branch manager|compliance officer|auditor|chief medical officer|attending physician|administrator)\b.{0,80}\b(authori[sz]e|approve|instruct|order|need you to)\b'
+  input:
+    flows:
+    - regex check input
