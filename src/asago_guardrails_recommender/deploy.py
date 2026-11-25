@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import json
 import re
 from pathlib import Path
 from typing import Any
@@ -31,6 +32,17 @@ DEFAULT_IMAGE = (
     "quay.io/trustyai/nemo-guardrails-server@sha256:bf08994e25d84f03b5182f5505cb8358e99e2d5a8879a64728322fd569b6c327"
 )
 MAX_VOLUME_NAME_LEN = 63
+
+
+def used_config_ids(recommendations_path: Path) -> set[str]:
+    """Config ids that tests send requests to: every test-plan entry plus each option's own config."""
+    used: set[str] = set()
+    for rec in json.loads(recommendations_path.read_text()):
+        for opt in rec.get("options", []):
+            if opt.get("config_id"):
+                used.add(opt["config_id"])
+            used.update(t["config_id"] for t in opt.get("test_plan", []) if t.get("config_id"))
+    return used
 
 
 def validate_config_id(config_id: str) -> bool:
@@ -442,6 +454,11 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument("--configs", nargs="*", help="Subset of config folder names (default: all)")
     parser.add_argument(
+        "--used-only",
+        action="store_true",
+        help="Only configs referenced by recommendations.json (test plans and option configs)",
+    )
+    parser.add_argument(
         "--key-secret", default="litellm-master-key", help="Secret name for API key (default: litellm-master-key)"
     )
     parser.add_argument("--out", help="Output YAML path (default: <run-dir>/deploy.yaml or deploy-standalone.yaml)")
@@ -463,6 +480,11 @@ def main(argv: list[str] | None = None) -> int:
     if not server_configs_dir.exists():
         print(f"Error: server_configs not found at {server_configs_dir}")
         return 1
+
+    if args.used_only:
+        used = used_config_ids(run_dir / "recommendations.json")
+        args.configs = sorted(set(args.configs) & used) if args.configs else sorted(used)
+        print(f"Deploying {len(args.configs)} configs referenced by recommendations.json")
 
     # Build ConfigMaps
     try:
