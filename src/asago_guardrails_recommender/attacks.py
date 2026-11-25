@@ -112,6 +112,7 @@ def _parse_garak_to_attack(
     turns = garak.get("turns", [])
     injection_surface = garak.get("injection_surface", "")
     narrative_summary = garak.get("narrative", {}).get("summary", "")
+    detector_rubric = garak.get("detector_rubric")
 
     # Extract adversarial text
     adversarial_text = ""
@@ -143,6 +144,7 @@ def _parse_garak_to_attack(
         injection_surface=injection_surface,
         narrative_summary=narrative_summary,
         baseline_outcome=baseline_outcome,
+        detector_rubric=detector_rubric,
     )
 
 
