@@ -1,0 +1,13 @@
+passthrough: true
+rails:
+  config:
+    regex_detection:
+      input:
+        case_insensitive: true
+        patterns:
+        - '\b(already|previously|has been|have been|was)\s+(been\s+)?(approved|authori[sz]ed|verified|cleared|signed off)\b.{0,60}\b(so|therefore|please|you can|no need)\b'
+        - '\b(approval|authori[sz]ation|reference|ticket|case|override)\s*(code|number|no\.?|id|#)\s*[:#]?\s*[A-Z0-9][A-Z0-9-]{3,}\b'
+        - '\b(attached|enclosed|per the|see the)\b.{0,30}\b(approval|authori[sz]ation|letter|memo|certificate|waiver|exemption)\b.{0,60}\b(skip|bypass|waive|without|no need)\b'
+  input:
+    flows:
+    - regex check input

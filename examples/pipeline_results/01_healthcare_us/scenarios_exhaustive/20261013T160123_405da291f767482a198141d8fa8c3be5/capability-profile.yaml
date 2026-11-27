@@ -1,0 +1,141 @@
+zones_active:
+- input
+- memory
+- reasoning
+- tool_execution
+entry_points:
+- name: patient portal web and mobile app user inputs
+  entry_point_type: other
+  direction: bidirectional
+  controllability: direct
+  entry_point_id: ep:v1:86bbfe40a505ca8c5decc2487195e42a
+- name: EHR medical records and clinical context
+  entry_point_type: other
+  direction: input
+  controllability: indirect
+  ingress_zone: reasoning
+  entry_point_id: ep:v1:2d6897593ac062c402bdee71a5e26332
+- name: insurance and billing claim data
+  entry_point_type: other
+  direction: input
+  controllability: indirect
+  ingress_zone: reasoning
+  entry_point_id: ep:v1:1d50d78859b0ba2a2bec88aedb71200a
+- name: healthcare backend API integrations
+  entry_point_type: other
+  direction: output
+  controllability: system
+  entry_point_id: ep:v1:a6279ad5fbdaa861274ec981f7125c41
+- name: human escalation to care staff
+  entry_point_type: other
+  direction: output
+  controllability: system
+  entry_point_id: ep:v1:f838b56106c886b15217990371a4917b
+confidence: high
+kc_subcodes:
+- KC1.1
+- KC2.1
+- KC3.3
+- KC4.3
+- KC5.2
+- KC6.1.2
+- KC6.3.2
+- KC6.3.3
+- KCX-HITL
+tool_inventory:
+- name: retrieve_medical_records
+  description: Read-only access to patient history, diagnoses, lab results, prescription
+    records, immunization history, and clinical notes from Epic EHR
+  tool_id: tool:v1:2da27564947c81fd6933c749a5911fa5
+- name: schedule_appointment
+  description: Create, modify, or cancel appointments with healthcare providers across
+    45 facilities; synchronizes with Epic scheduling module
+  tool_id: tool:v1:3423bec1542b40cfa00031b263096d30
+- name: request_prescription_refill
+  description: Submit prescription refill requests directly to pharmacy fulfillment
+    system (Epic Willow); includes medication history review and formulary check
+  tool_id: tool:v1:e11c85ee877e0faa9f0e7100932fdb64
+- name: submit_insurance_claim
+  description: Process and track insurance claims with patient billing data; write
+    access to claims management system (Epic Resolute)
+  tool_id: tool:v1:0f4f2eb6f425378f593a85ecfbd85e09
+- name: update_patient_info
+  description: Modify patient demographic information, emergency contacts, insurance
+    policy details, and communication preferences in Epic master patient index
+  tool_id: tool:v1:7177152b71618036e86b3449dbc0ede4
+- name: human agent escalation
+  description: Transfers the conversation to human healthcare staff when assistance
+    is needed
+  tool_id: tool:v1:34fe329b6b46631383354a9933e3fab4
+- name: RAG knowledge retrieval
+  description: Retrieves relevant healthcare policies, compliance guidelines, and
+    HIPAA documentation
+  tool_id: tool:v1:9ee6557c598388d69979d25e3d1ce84e
+entry_point_completeness: inferred_partial
+entry_point_evidence: []
+tool_inventory_completeness: inferred_partial
+tool_inventory_evidence: []
+trust_boundaries:
+- name: patient-input-to-ehr-access
+  from_zone: input
+  to_zone: reasoning
+  controls:
+  - authentication
+  - role-based access control
+  confidence: explicit
+  trust_boundary_id: tb:v1:83ebdef0d95eac27a4c8306d3f9236b3
+- name: reasoning-to-api-execution
+  from_zone: reasoning
+  to_zone: tool_execution
+  controls:
+  - API authorization
+  - audit logging
+  confidence: explicit
+  trust_boundary_id: tb:v1:f8a44c168d05abbfbfc65dba60177a3c
+- name: output-patient-data-isolation
+  from_zone: tool_execution
+  to_zone: output
+  controls:
+  - HIPAA compliance filter
+  - data redaction
+  confidence: explicit
+  trust_boundary_id: tb:v1:b265d25f80367422d9591ee99e04329b
+external_integrations:
+- name: Azure OpenAI Service (GPT-4 Turbo)
+  integration_type: api
+  auth_method: api_key
+  data_sensitivity: high
+  integration_id: int:v1:982b2b40b3d7cb254a45c44bed2418cd
+- name: Epic EHR system
+  integration_type: database
+  auth_method: service_account
+  data_sensitivity: high
+  integration_id: int:v1:abc5e15c5d60df5e0ff802fb85cc38d1
+- name: Azure Cognitive Search
+  integration_type: database
+  auth_method: service_account
+  data_sensitivity: high
+  integration_id: int:v1:8d64a8b951f704d9c67f60d2b880e408
+- name: Pharmacy fulfillment system (Epic Willow)
+  integration_type: api
+  auth_method: service_account
+  data_sensitivity: high
+  integration_id: int:v1:8b7c086f0fbe0537063dd7a947b861ea
+- name: Claims management system (Epic Resolute)
+  integration_type: api
+  auth_method: service_account
+  data_sensitivity: high
+  integration_id: int:v1:c877e7c6e7725cc87d884bd92f0af17f
+has_persistent_memory: true
+multi_agent: false
+hitl: true
+kc_subcodes_display:
+  KC1.1: Large Language Model (LLM)
+  KC2.1: Predefined workflows
+  KC3.3: Chain of Thought (CoT)
+  KC4.3: In-agent, cross-session memory
+  KC5.2: Managed platform
+  KC6.1.2: Extensive API access
+  KC6.3.2: Database full CRUD
+  KC6.3.3: RAG context data sources
+  KCX-HITL: System has human-in-the-loop review or approval controls

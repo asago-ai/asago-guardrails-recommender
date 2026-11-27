@@ -27,6 +27,7 @@ def recommend_run(tmp_path_factory):
                 str(REPO_ROOT / "examples/pipeline_results"),
                 "--tag-cache",
                 str(REPO_ROOT / "examples/tag_cache"),
+                "--output-rails",
                 "--run-id",
                 "t",
                 "--out",

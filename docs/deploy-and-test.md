@@ -67,6 +67,7 @@ uv run asago-guardrails-recommender deploy --run-dir output/<run-id> --mode stan
 ```
 
 - `--image` overrides the default server image.
+- `--used-only` deploys only the configs that tests send requests to (each option's config plus the single-rail configs in its test plan). Options with the same rails share one config named `opt-<hash>[-out]`, so this is usually a small set.
 - `--mode operator` writes a `NemoGuardrails` custom resource instead. It needs the TrustyAI operator and an image that can load the catalog.
 
 **4. Deploy and wait for readiness.**
@@ -91,6 +92,85 @@ uv run asago-guardrails-recommender test --run-dir output/<run-id> --nemo-url ht
 uv run asago-guardrails-recommender test --run-dir output/<run-id> --summarize
 ```
 
+The first two tables come from the run dir's own result files and reconcile with them: per option rank (attacks tested, blocked at input, blocked at output among attacks not blocked at input, attack success; errors excluded), and per rail id (attack catches at input and at output, benign blocks at input and output). NeMo flow names are mapped to catalog rail ids. Flows shared by several cards (for example all PII cards, or the three regex cards) are reported under the card type (`sensitive_data_detection`, `regex_detection`). The last section is the efficacy store, which aggregates all runs and is not limited to the run dir.
+
+## Output rails
+
+With `--output-rails`, the recommender also selects output rails per option, from the attack's signals: injection regexes on the reply, Presidio for PII and exfiltration, YARA and HAP for harmful payloads, and the self-check output judge for action and disclosure signals. See [design.md section 8](design.md#8-output-rails) for the selection rules.
+
+**Recommend with output rails:**
+
+```bash
+uv run asago-guardrails-recommender recommend --output-rails --pipeline-results <my_results> --run-id <run-id>
+```
+
+Options with output rails get a combined input + output server config under `server_configs/`. Configs are named by a hash of their content (`opt-<hash>-out`), so options with the same rails share one config.
+
+**Deploy:**
+
+Run the same deploy step. `--used-only` deploys only the configs that the recommendations use, not one per catalog rail:
+
+```bash
+uv run asago-guardrails-recommender deploy --run-dir output/<run-id> --mode standalone --namespace <ns> --used-only
+```
+
+**Test with output rails:**
+
+For each option with output rails, `test --with-output` runs the attack, calls the LLM, and tests the output check:
+
+```bash
+uv run asago-guardrails-recommender test --run-dir output/<run-id> --nemo-url http://localhost:8000 --with-output --dry-run
+uv run asago-guardrails-recommender test --run-dir output/<run-id> --nemo-url http://localhost:8000 --with-output
+```
+
+Results are in `<run-dir>/output_test_results.json` (includes model replies).
+
+To test output rails on the reply the baseline actually judged, instead of a fresh one, pass the replies
+extracted from the garak reports. No LLM call is made; attack success comes from the baseline outcome.
+
+```bash
+python scripts/extract_baseline_replies.py --baseline-dir <baseline results> --out <results>/baseline_replies.json
+uv run asago-guardrails-recommender test --run-dir output/<run-id> --nemo-url http://localhost:8000 --with-output \
+  --baseline-replies <results>/baseline_replies.json
+```
+
+Most agentic replies are tool calls with no text. The output rails see a text rendering: the reply text, then one
+`[tool call] <name>(<arguments>)` line per call.
+
+| Outcome | Meaning |
+|---|---|
+| `blocked_input` | Input rails blocked the attack |
+| `blocked_output` | Output rails blocked the reply |
+| `model_refused` | The LLM refused the attack |
+| `attack_succeeded` | Neither input nor output rails blocked it |
+
+## Benign requests (false positives)
+
+Attack tests only show that a config blocks attacks. To check that it does not block normal use, run benign requests through the same configs:
+
+```bash
+uv run asago-guardrails-recommender test --run-dir output/<run-id> --nemo-url http://localhost:8000 --benign-requests examples/benign_requests
+```
+
+`--benign-requests DIR` reads one `<use_case>.yaml` per use case (the file name must match the `use_case` field). Each request has `kind: plain` or `kind: borderline`. Use `--dry-run` to count the calls without sending them.
+
+Which configs are tested: every distinct `config_id` in the test plans of that use case's attacks (non-gap recommendations). This is the same set the attack tests send to. The `-out` combined configs are included, because their test-plan entries run the input rails; the output rails are only used by `test --with-output`.
+
+Each benign request is sent to each of those configs with the same payload as the attack input test: `model`, one user message, and `guardrails.config_id`, with no `rail_types`. Benign and attack input numbers are therefore directly comparable. A call counts as blocked when the response has `status: blocked`.
+
+Results go to `<run-dir>/benign_results.json`, one record per call, sorted by use case, config and request. The record has `use_case`, `request_id`, `kind`, `config_id`, `rails`, `status`, `blocked`, `blocking_rail` and `error`. The command prints blocked/total per config (plain and borderline split), and for each option rank how many options have a false-positive rate of 0, above 0, or at least 25% (on their input config). `test --summarize` adds a "Benign FP" column for each rail that has a single-rail benign config.
+
+Calls that errored are **not** in the denominator: an error is neither a block nor a pass, so counting it as "not blocked" would make the false-positive rate look lower. Errors are reported separately per config and overall.
+
+**Benign output test (replies).** The same benign requests can also be checked against the output rails, using replies the model gave to them. Pass a benign replies file keyed by request id (`examples/benign_requests/benign_replies.json`, same shape as `baseline_replies.json`). `--benign-replies` requires `--benign-requests`, because the user message comes from it. The shipped replies were generated with `scripts/generate_benign_replies.py --benign-dir examples/benign_requests --pipeline-results examples/pipeline_results --out <file>`, which calls the target model under the same conditions as the garak baseline (temperature 0, one artifact's system turn per request):
+
+```bash
+uv run asago-guardrails-recommender test --run-dir output/<run-id> --nemo-url http://localhost:8000 \
+  --benign-requests examples/benign_requests --benign-replies examples/benign_requests/benign_replies.json
+```
+
+Configs: the output configs the output check uses for the use case, i.e. `config_name(option.config_id)` for each non-gap attack option that has output rails (the same selection as `test --with-output`). Each benign reply is sent to each of those configs with the same payload as the output check with `--baseline-replies`: user message = the benign request text, assistant message = the reply's `rendered` text, and `guardrails.rail_types: ["output"]`. A request with no reply for its use case is recorded as an error and not sent. Results go to `<run-dir>/benign_output_results.json`, with the same keys as `benign_results.json` plus `stage: "output"`. The summary and option-level distribution use the output configs; errors are excluded as above.
+
 ## Outputs
 
 | Path | Contents |
@@ -108,7 +188,7 @@ uv run asago-guardrails-recommender test --run-dir output/<run-id> --summarize
 To show your run in the demo:
 
 ```bash
-uv run asago-guardrails-recommender snapshot --pipeline-results <my_results> --use-cases-dir ../examples/use_cases --run-dir output/<run-id> --out ../demo/data
+uv run asago-guardrails-recommender snapshot --pipeline-results <my_results> --run-dir output/<run-id> --out demo/data
 ```
 
 See [../demo/README.md](../demo/README.md) for the optional policy-mapper inputs.

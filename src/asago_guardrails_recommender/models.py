@@ -12,6 +12,7 @@ from typing import Any, Literal
 REPO_ROOT = Path(__file__).resolve().parents[2]
 CATALOG_DIR = REPO_ROOT / "guardrail-catalog"
 RAIL_YAML_DIR = CATALOG_DIR / "rails"
+OUTPUT_STAGES_PATH = CATALOG_DIR / "output_stages.yaml"
 OUTPUT_DIR = REPO_ROOT / "output"
 EFFICACY_DIR = OUTPUT_DIR / "efficacy"
 META_DIR = OUTPUT_DIR / "efficacy" / "meta"
@@ -61,6 +62,7 @@ PII_SIGNAL_PREFIX = "pii:"
 DETECTOR_TIERS: dict[str, int] = {
     "sensitive_data_detection": 0,
     "injection_detection": 0,
+    "regex_detection": 0,
     "hf_classifier": 1,
     "self_check_input": 2,
 }
@@ -69,6 +71,12 @@ DETECTOR_TIERS: dict[str, int] = {
 INSTANCE_SIGNALS: dict[str, list[str]] = {
     "hf_classifier_prompt-injection": ["instruction_injection"],
     "hf_classifier_guardian-hap": ["harmful_language"],
+    "hf_classifier_wolf-defender": ["instruction_injection"],
+    # Regex rails: patterns written from the signal definitions, not tuned on attacks.
+    "regex_instruction_injection": ["instruction_injection"],
+    "regex_social_engineering": ["social_engineering"],
+    "regex_fabricated_evidence": ["fabricated_evidence"],
+    "regex_action_confirmation": ["unauthorized_action"],
     "injection_detector_code": ["code_payload"],
     "injection_detector_sqli": ["sql_payload"],
     "injection_detector_xss": ["markup_script"],
@@ -80,15 +88,28 @@ INSTANCE_SIGNALS: dict[str, list[str]] = {
         "exfiltration_request",
         "instruction_injection",
     ],
+    "self_check_output_policy": [
+        "unauthorized_action",
+        "fabricated_evidence",
+        "social_engineering",
+        "exfiltration_request",
+        "harmful_language",
+    ],
 }
 
 EXTENDED_RAIL_ID = "self_check_input_policy"
+OUTPUT_JUDGE_RAIL_ID = "self_check_output_policy"
 MAX_CONFIG_NAME_LEN = 44
 
 # Mapping of non-PII rail IDs to short, k8s-safe config names
 EXPLICIT_CONFIG_NAMES: dict[str, str] = {
     "hf_classifier_prompt-injection": "prompt-injection-detector",
     "hf_classifier_guardian-hap": "hate-speech-detector",
+    "hf_classifier_wolf-defender": "wolf-defender-detector",
+    "regex_instruction_injection": "regex-injection-detector",
+    "regex_social_engineering": "regex-social-eng-detector",
+    "regex_fabricated_evidence": "regex-fabricated-detector",
+    "regex_action_confirmation": "regex-action-detector",
     "injection_detector_code": "code-injection-detector",
     "injection_detector_sqli": "sql-injection-detector",
     "injection_detector_xss": "xss-detector",
@@ -154,6 +175,7 @@ class RailCard:
     tags: list[str] = field(default_factory=list)
     in_default_catalog: bool = True
     source_path: str | None = None
+    output_flow: str | None = None  # flow that runs the card on the bot reply (from output_stages.yaml)
 
 
 @dataclass
@@ -174,6 +196,7 @@ class AttackRecord:
     atlas_ids: list[str] = field(default_factory=list)
     laaf_ids: list[str] = field(default_factory=list)
     baseline_outcome: str | None = None
+    detector_rubric: dict[str, Any] | None = None
 
 
 @dataclass
@@ -204,6 +227,8 @@ class Option:
     rationale: str
     config_dir: str | None = None
     test_plan: list[dict] = field(default_factory=list)
+    output_rails: list[str] = field(default_factory=list)
+    config_id: str | None = None  # Actual config_id (includes "-out" suffix if output rails present)
 
 
 @dataclass
@@ -228,7 +253,7 @@ class EfficacyRecord:
     attack_features: dict[str, Any]
     rails: list[str]
     option_rank: int | None
-    level: Literal["detection", "end_to_end"]
+    level: Literal["detection", "end_to_end", "with_output"]
     status: str  # passed | modified | blocked | error
     blocking_rail: str | None
     judge_outcome: str | None
@@ -237,10 +262,47 @@ class EfficacyRecord:
     error: str | None = None
     test_label: str | None = None
     probe_messages: list[dict] = field(default_factory=list)
+    # Output rails fields (optional)
+    output_status: str | None = None  # passed | modified | blocked | error
+    output_blocking_rail: str | None = None
+    output_latency_ms: float | None = None
+    output_error: str | None = None
+    model_reply: str | None = None
+    attack_success: bool | None = None  # True | False | None (unparseable)
+    success_reason: str | None = None
+    outcome: str | None = None  # blocked_input | blocked_output | attack_succeeded | model_refused | unknown | error
+    output_would_block: bool | None = None
 
 
 def to_dict(obj: Any) -> Any:
-    """Dataclass (or list of them) -> JSON-ready structure."""
+    """Dataclass (or list of them) -> JSON-ready structure.
+
+    For Option objects, omit output_rails if it's empty and config_id if it's None to maintain backward compatibility.
+    For AttackRecord, omit detector_rubric to maintain backward compatibility with run1.
+    """
     if isinstance(obj, list):
         return [to_dict(o) for o in obj]
+
+    if isinstance(obj, Option):
+        # Handle Option specially to omit empty output_rails and None config_id
+        d = asdict(obj)
+        if not d.get("output_rails"):
+            d.pop("output_rails", None)
+        if d.get("config_id") is None:
+            d.pop("config_id", None)
+        return d
+
+    if isinstance(obj, AttackRecord):
+        # Omit detector_rubric to keep run1 byte-identical
+        d = asdict(obj)
+        d.pop("detector_rubric", None)
+        return d
+
+    if isinstance(obj, Recommendation):
+        # Handle Recommendation to process options properly
+        d = asdict(obj)
+        if "options" in d and isinstance(d["options"], list):
+            d["options"] = [to_dict(opt) for opt in obj.options]
+        return d
+
     return asdict(obj)

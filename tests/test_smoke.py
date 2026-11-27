@@ -17,9 +17,9 @@ class TestCatalogLoads:
     """Test catalog loading."""
 
     def test_catalog_loads(self):
-        """Load catalog and verify 65 cards with unique ids."""
+        """Load catalog and verify 71 cards with unique ids."""
         cards = catalog.load_catalog(include_extended=True)
-        assert len(cards) == 65, f"Expected 65 cards, got {len(cards)}"
+        assert len(cards) == 71, f"Expected 71 cards, got {len(cards)}"
 
         # Check ids are unique
         ids = [c.id for c in cards]
@@ -29,10 +29,10 @@ class TestCatalogLoads:
 class TestExamplesLoad:
     """Test loading examples."""
 
-    def test_examples_load_28_attacks(self):
-        """Load attacks from examples/pipeline_results and verify 28 attacks."""
+    def test_examples_load_58_attacks(self):
+        """Load attacks from examples/pipeline_results and verify 58 attacks."""
         atks = attacks.load_attacks(pipeline_results_path=REPO_ROOT / "examples/pipeline_results")
-        assert len(atks) == 28, f"Expected 28 attacks, got {len(atks)}"
+        assert len(atks) == 58, f"Expected 58 attacks, got {len(atks)}"
 
 
 class TestRecommendRun:
@@ -92,7 +92,7 @@ class TestRecommendRun:
         recs_path = run_dir / "recommendations.json"
         with open(recs_path) as f:
             recs = json.load(f)
-        assert len(recs) == 28, f"Expected 28 recommendations, got {len(recs)}"
+        assert len(recs) == 58, f"Expected 58 recommendations, got {len(recs)}"
 
     def test_deploy_manifest(self, recommend_run, tmp_path):
         """Deploy manifests from a recommend run."""

@@ -1,0 +1,14 @@
+passthrough: true
+rails:
+  config:
+    hf_classifier:
+      wolf-defender:
+        blocked_labels:
+        - injection
+        engine: local
+        model: RedHatAI/wolf-defender-prompt-injection
+        task: text-classification
+        threshold: 0.5
+  input:
+    flows:
+    - hf classifier check windowed input $classifier=wolf-defender
